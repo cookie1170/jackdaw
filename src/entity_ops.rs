@@ -298,11 +298,6 @@ pub fn duplicate_selected(world: &mut World) {
             world.entity_mut(new_root).insert(Name::new(new_name));
         }
 
-        // Offset transform slightly so it's not on top
-        if let Some(mut transform) = world.get_mut::<Transform>(new_root) {
-            transform.translation += Vec3::new(0.5, 0.0, 0.5);
-        }
-
         // Preserve parent relationship from original
         let parent = world.get::<ChildOf>(entity).map(|c| c.0);
         if let Some(parent) = parent {
@@ -380,6 +375,12 @@ fn handle_entity_keys(world: &mut World) {
         delete_selected(world);
     } else if ctrl && d_pressed {
         duplicate_selected(world);
+        let selection = world.resource::<Selection>();
+        if let Some(entity) = selection.primary() {
+            world
+                .resource_mut::<crate::modal_transform::ViewportDragState>()
+                .pending_grab = Some(entity);
+        }
     } else if ctrl && c_pressed {
         copy_components(world);
     } else if ctrl && v_pressed {

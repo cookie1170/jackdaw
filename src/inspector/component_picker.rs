@@ -196,31 +196,35 @@ pub(crate) fn on_add_component_button_click(
         let count = entries.len();
 
         // Section header
-        commands.spawn((
-            ComponentPickerSectionHeader {
-                group: group_name.clone(),
-            },
-            Node {
-                padding: UiRect::new(
-                    Val::Px(tokens::SPACING_LG),
-                    Val::Px(tokens::SPACING_LG),
-                    Val::Px(tokens::SPACING_MD),
-                    Val::Px(tokens::SPACING_XS),
-                ),
-                width: Val::Percent(100.0),
-                border: UiRect::bottom(Val::Px(1.0)),
-                ..Default::default()
-            },
-            BorderColor::all(tokens::BORDER_SUBTLE),
-            ChildOf(list),
-            children![(
-                Text::new(format!("{group_name} ({count})")),
-                TextFont {
-                    font_size: tokens::FONT_SM,
+        let header_id = commands
+            .spawn((
+                ComponentPickerSectionHeader {
+                    group: group_name.clone(),
+                },
+                Node {
+                    padding: UiRect::new(
+                        Val::Px(tokens::SPACING_LG),
+                        Val::Px(tokens::SPACING_LG),
+                        Val::Px(tokens::SPACING_MD),
+                        Val::Px(tokens::SPACING_XS),
+                    ),
+                    width: Val::Percent(100.0),
+                    border: UiRect::bottom(Val::Px(1.0)),
                     ..Default::default()
                 },
-                TextColor(tokens::TEXT_SECONDARY),
-            )],
+                BorderColor::all(tokens::BORDER_SUBTLE),
+                ChildOf(list),
+            ))
+            .id();
+
+        commands.spawn((
+            Text::new(format!("{group_name} ({count})")),
+            TextFont {
+                font_size: tokens::FONT_SM,
+                ..Default::default()
+            },
+            TextColor(tokens::TEXT_SECONDARY),
+            ChildOf(header_id),
         ));
 
         // Component entries
@@ -239,101 +243,110 @@ pub(crate) fn on_add_component_button_click(
                 module_path.clone()
             };
 
-            let mut entry = commands.spawn((
-                ComponentPickerEntry {
-                    short_name: short_name.clone(),
-                    module_path: module_path.clone(),
-                    category: category.clone(),
-                    description: description.clone(),
-                },
-                Node {
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::axes(
-                        Val::Px(tokens::SPACING_LG),
-                        Val::Px(tokens::SPACING_SM),
-                    ),
-                    width: Val::Percent(100.0),
-                    ..Default::default()
-                },
-                BackgroundColor(Color::NONE),
-                ChildOf(list),
-                observe(move |_: On<Pointer<Click>>, mut commands: Commands| {
-                    commands.queue(move |world: &mut World| {
-                        let cmd = crate::commands::AddComponent {
-                            entity: source_entity,
-                            type_id,
-                            component_id,
-                        };
-                        let cmd = Box::new(cmd);
-                        cmd.execute(world);
-                        let mut history = world.resource_mut::<crate::commands::CommandHistory>();
-                        history.undo_stack.push(cmd);
-                        history.redo_stack.clear();
+            let entry_id = commands
+                .spawn((
+                    ComponentPickerEntry {
+                        short_name: short_name.clone(),
+                        module_path: module_path.clone(),
+                        category: category.clone(),
+                        description: description.clone(),
+                    },
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::axes(
+                            Val::Px(tokens::SPACING_LG),
+                            Val::Px(tokens::SPACING_SM),
+                        ),
+                        width: Val::Percent(100.0),
+                        ..Default::default()
+                    },
+                    BackgroundColor(Color::NONE),
+                    ChildOf(list),
+                    observe(move |_: On<Pointer<Click>>, mut commands: Commands| {
+                        commands.queue(move |world: &mut World| {
+                            let cmd = crate::commands::AddComponent {
+                                entity: source_entity,
+                                type_id,
+                                component_id,
+                            };
+                            let cmd = Box::new(cmd);
+                            cmd.execute(world);
+                            let mut history =
+                                world.resource_mut::<crate::commands::CommandHistory>();
+                            history.undo_stack.push(cmd);
+                            history.redo_stack.clear();
 
-                        // Force refresh: toggle Selected to rebuild inspector
-                        if let Ok(mut entity) = world.get_entity_mut(source_entity) {
-                            entity.remove::<Selected>();
-                        }
-                        world.entity_mut(source_entity).insert(Selected);
-                    });
-                }),
-                observe(
-                    move |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {
-                        if let Ok(mut bg) = bg.get_mut(hover.event_target()) {
-                            bg.0 = tokens::HOVER_BG;
-                        }
-                    },
-                ),
-                observe(
-                    move |out: On<Pointer<Out>>, mut bg: Query<&mut BackgroundColor>| {
-                        if let Ok(mut bg) = bg.get_mut(out.event_target()) {
-                            bg.0 = Color::NONE;
-                        }
-                    },
-                ),
-            ));
+                            // Force refresh: toggle Selected to rebuild inspector
+                            if let Ok(mut entity) = world.get_entity_mut(source_entity) {
+                                entity.remove::<Selected>();
+                            }
+                            world.entity_mut(source_entity).insert(Selected);
+                        });
+                    }),
+                    observe(
+                        move |hover: On<Pointer<Over>>,
+                              mut bg: Query<&mut BackgroundColor>| {
+                            if let Ok(mut bg) = bg.get_mut(hover.event_target()) {
+                                bg.0 = tokens::HOVER_BG;
+                            }
+                        },
+                    ),
+                    observe(
+                        move |out: On<Pointer<Out>>,
+                              mut bg: Query<&mut BackgroundColor>| {
+                            if let Ok(mut bg) = bg.get_mut(out.event_target()) {
+                                bg.0 = Color::NONE;
+                            }
+                        },
+                    ),
+                ))
+                .id();
 
             // Line 1: short name + optional category badge
-            entry.with_child((
-                Node {
-                    flex_direction: FlexDirection::Row,
-                    justify_content: JustifyContent::SpaceBetween,
-                    width: Val::Percent(100.0),
+            let row = commands
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Row,
+                        justify_content: JustifyContent::SpaceBetween,
+                        width: Val::Percent(100.0),
+                        ..Default::default()
+                    },
+                    ChildOf(entry_id),
+                ))
+                .id();
+
+            commands.spawn((
+                Text::new(short_name),
+                TextFont {
+                    font_size: tokens::FONT_MD,
                     ..Default::default()
                 },
-                children![
-                    (
-                        Text::new(short_name),
-                        TextFont {
-                            font_size: tokens::FONT_MD,
-                            ..Default::default()
-                        },
-                        ThemedText,
-                    ),
-                    (
-                        Text::new(if category.is_empty() {
-                            String::new()
-                        } else {
-                            category
-                        }),
-                        TextFont {
-                            font_size: tokens::FONT_SM,
-                            ..Default::default()
-                        },
-                        TextColor(tokens::TEXT_SECONDARY),
-                    ),
-                ],
+                ThemedText,
+                ChildOf(row),
             ));
+
+            if !category.is_empty() {
+                commands.spawn((
+                    Text::new(category),
+                    TextFont {
+                        font_size: tokens::FONT_SM,
+                        ..Default::default()
+                    },
+                    TextColor(tokens::TEXT_SECONDARY),
+                    ChildOf(row),
+                ));
+            }
 
             // Line 2: subtitle (description or module path)
             if !subtitle.is_empty() {
-                entry.with_child((
+                commands.spawn((
                     Text::new(subtitle),
                     TextFont {
                         font_size: tokens::FONT_SM,
                         ..Default::default()
                     },
                     TextColor(tokens::TEXT_SECONDARY),
+                    ChildOf(entry_id),
                 ));
             }
         }

@@ -94,7 +94,11 @@ struct Interactable {
     pub radius: f32,
 }
 
-fn spawn_scene(mut commands: Commands) {
+fn spawn_scene(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
     commands.spawn((
         Name::new("Sun"),
         DirectionalLight {
@@ -110,6 +114,35 @@ fn spawn_scene(mut commands: Commands) {
         )),
     ));
 
-    // Spawn an entity so there's something to select and add components to
-    commands.spawn((Name::new("Player"), Transform::default()));
+    // Player: visible cube with custom components pre-attached
+    commands.spawn((
+        Name::new("Player"),
+        Mesh3d(meshes.add(Cuboid::new(1.0, 2.0, 1.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.2, 0.6, 1.0),
+            ..default()
+        })),
+        Transform::from_xyz(0.0, 1.0, 0.0),
+        Health {
+            current: 100.0,
+            max: 100.0,
+        },
+        Speed { value: 5.0 },
+    ));
+
+    // Enemy: second entity showing different custom components
+    commands.spawn((
+        Name::new("Enemy"),
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.5, 1.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.9, 0.2, 0.2),
+            ..default()
+        })),
+        Transform::from_xyz(4.0, 0.75, 0.0),
+        Team { id: 2 },
+        DamageOverTime {
+            damage_per_second: 10.0,
+            duration: 5.0,
+        },
+    ));
 }

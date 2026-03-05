@@ -21,8 +21,8 @@ use jackdaw_widgets::collapsible::{
 
 use super::{
     AddComponentButton, ComponentDisplay, ComponentDisplayBody, ComponentPicker, Inspector,
-    ReflectDisplayable, brush_display, custom_props_display, extract_module_group,
-    material_display, reflect_fields,
+    ReflectDisplayable, ReflectEditorMeta, brush_display, custom_props_display,
+    extract_module_group, material_display, reflect_fields,
 };
 
 pub(crate) fn add_component_displays(
@@ -80,6 +80,7 @@ pub(crate) fn add_component_displays(
     let registry = type_registry.read();
 
     // (short_name, module_group, component_id)
+    let mut custom_groups = std::collections::HashSet::new();
     let mut comp_list: Vec<(String, String, ComponentId)> = archetype
         .iter_components()
         .filter_map(|component_id| {
@@ -96,7 +97,16 @@ pub(crate) fn add_component_displays(
                     return None;
                 }
                 let short = table.short_path().to_string();
-                let module_group = extract_module_group(table.module_path());
+                let module_group =
+                    if let Some(meta) = registration.data::<ReflectEditorMeta>()
+                        && !meta.category.is_empty()
+                    {
+                        let cat = meta.category.to_string();
+                        custom_groups.insert(cat.clone());
+                        cat
+                    } else {
+                        extract_module_group(table.module_path())
+                    };
                 return Some((short, module_group, component_id));
             }
 
@@ -113,9 +123,13 @@ pub(crate) fn add_component_displays(
         })
         .collect();
 
-    // Sort by (group, name)
+    // Sort: custom-category groups first, then alphabetical within each tier
     comp_list.sort_by(|a, b| {
-        a.1.cmp(&b.1)
+        let a_custom = custom_groups.contains(&a.1);
+        let b_custom = custom_groups.contains(&b.1);
+        b_custom
+            .cmp(&a_custom)
+            .then_with(|| a.1.cmp(&b.1))
             .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
     });
 
@@ -167,6 +181,24 @@ pub(crate) fn add_component_displays(
                     });
                 },
             );
+
+            // Group icon
+            let (group_icon, icon_color) = if custom_groups.contains(module_group) {
+                (Icon::Tag, tokens::CATEGORY_ENTITY)
+            } else {
+                (Icon::Package, tokens::TEXT_SECONDARY)
+            };
+
+            commands.spawn((
+                Text::new(String::from(group_icon.unicode())),
+                TextFont {
+                    font: icon_font.0.clone(),
+                    font_size: tokens::FONT_SM,
+                    ..Default::default()
+                },
+                TextColor(icon_color),
+                ChildOf(header),
+            ));
 
             // Group name
             commands.spawn((
@@ -299,10 +331,8 @@ pub(crate) fn add_component_displays(
 
     commands.spawn((
         AddComponentButton,
-        bevy::feathers::controls::button(
-            bevy::feathers::controls::ButtonProps::default(),
-            (),
-            Spawn(Text::new("+")),
+        jackdaw_feathers::button::button(
+            jackdaw_feathers::button::ButtonProps::new("+ Add Component"),
         ),
         ChildOf(*inspector),
     ));
