@@ -54,6 +54,12 @@ pub enum AppState {
 #[derive(Component, Default)]
 pub struct EditorEntity;
 
+/// Marker component for UI overlays that should block viewport camera input
+/// (scroll, pan, orbit) while they exist. Add this to any overlay entity
+/// (e.g. prefab picker, context menus) to automatically disable camera controls.
+#[derive(Component, Default)]
+pub struct BlocksCameraInput;
+
 /// Tag component that hides an entity from the hierarchy panel.
 /// Auto-applied to unnamed child entities (likely Bevy internals like shadow cascades).
 /// Users can remove it to make hidden entities visible, or add it to hide their own.

@@ -210,6 +210,7 @@ fn update_camera_enabled(
     mut camera_query: Query<&mut JackdawCameraSettings>,
     modal: Res<crate::modal_transform::ModalTransformState>,
     input_focus: Res<bevy::input_focus::InputFocus>,
+    blockers: Query<(), With<crate::BlocksCameraInput>>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -236,7 +237,8 @@ fn update_camera_enabled(
 
     let modal_active = modal.active.is_some();
     let text_focused = input_focus.0.is_some();
-    let should_enable = hovered && !modal_active && !text_focused;
+    let overlay_blocking = !blockers.is_empty();
+    let should_enable = hovered && !modal_active && !text_focused && !overlay_blocking;
 
     for mut settings in &mut camera_query {
         settings.enabled = should_enable;

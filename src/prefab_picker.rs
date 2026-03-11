@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use bevy::{prelude::*, ui_widgets::observe};
+use bevy::{picking::hover::Hovered, prelude::*, ui_widgets::observe};
 use jackdaw_feathers::{
     icons::Icon,
     text_edit::{self, TextEditProps, TextEditValue},
@@ -14,7 +14,8 @@ impl Plugin for PrefabPickerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            filter_prefab_picker.run_if(in_state(crate::AppState::Editor)),
+            (filter_prefab_picker, close_prefab_picker_on_dismiss)
+                .run_if(in_state(crate::AppState::Editor)),
         );
     }
 }
@@ -79,14 +80,17 @@ pub fn open_prefab_picker(world: &mut World) {
     let picker = commands
         .spawn((
             PrefabPicker,
+            crate::BlocksCameraInput,
             EditorEntity,
+            Hovered::default(),
             Node {
                 position_type: PositionType::Absolute,
                 flex_direction: FlexDirection::Column,
-                width: Val::Px(320.0),
+                width: Val::Px(420.0),
+                max_height: Val::Px(600.0),
                 top: Val::Px(40.0),
                 left: Val::Percent(50.0),
-                margin: UiRect::left(Val::Px(-160.0)),
+                margin: UiRect::left(Val::Px(-210.0)),
                 border: UiRect::all(Val::Px(1.0)),
                 border_radius: BorderRadius::all(Val::Px(tokens::BORDER_RADIUS_MD)),
                 ..Default::default()
@@ -114,8 +118,8 @@ pub fn open_prefab_picker(world: &mut World) {
         .spawn((
             Node {
                 flex_direction: FlexDirection::Column,
+                flex_grow: 1.0,
                 overflow: Overflow::scroll_y(),
-                max_height: Val::Px(360.0),
                 ..Default::default()
             },
             ChildOf(picker),
@@ -265,6 +269,23 @@ fn scan_jsn_files(dir: &PathBuf, _assets_root: &PathBuf, results: &mut Vec<(Stri
             info!("Prefab picker: found {:?} -> {:?}", path_str, display_name);
             results.push((path_str, display_name));
         }
+    }
+}
+
+/// Close the prefab picker when Escape is pressed or when clicking outside.
+fn close_prefab_picker_on_dismiss(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    picker: Query<(Entity, &Hovered), With<PrefabPicker>>,
+    mut commands: Commands,
+) {
+    let Ok((entity, hovered)) = picker.single() else {
+        return;
+    };
+    let esc = keyboard.just_pressed(KeyCode::Escape);
+    let clicked_outside = mouse.get_just_pressed().next().is_some() && !hovered.get();
+    if esc || clicked_outside {
+        commands.entity(entity).despawn();
     }
 }
 
