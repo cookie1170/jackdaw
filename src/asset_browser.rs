@@ -22,7 +22,7 @@ use crate::{
 };
 
 /// Returns true if the KTX2 file is NOT a simple 2D texture (cubemap or array texture).
-fn is_ktx2_non_2d(path: &Path) -> bool {
+pub fn is_ktx2_non_2d(path: &Path) -> bool {
     let Ok(mut file) = std::fs::File::open(path) else {
         return false;
     };
@@ -31,9 +31,10 @@ fn is_ktx2_non_2d(path: &Path) -> bool {
     if file.read_exact(&mut header).is_err() {
         return false;
     }
+    let pixel_depth = u32::from_le_bytes([header[28], header[29], header[30], header[31]]);
     let layer_count = u32::from_le_bytes([header[32], header[33], header[34], header[35]]);
     let face_count = u32::from_le_bytes([header[36], header[37], header[38], header[39]]);
-    layer_count > 1 || face_count > 1
+    pixel_depth > 0 || layer_count > 1 || face_count > 1
 }
 
 pub struct AssetBrowserPlugin;
@@ -43,14 +44,12 @@ impl Plugin for AssetBrowserPlugin {
         app.init_resource::<AssetBrowserState>()
             .init_resource::<AssetPreviewState>()
             .init_resource::<ActiveTooltip>()
-            .init_resource::<PendingThumbnailLoads>()
             .add_systems(OnEnter(crate::AppState::Editor), setup_initial_directory)
             .add_systems(
                 Update,
                 (
                     refresh_browser_on_change,
                     poll_asset_browser_folder,
-                    load_pending_thumbnails,
                     extract_array_layers,
                     update_preview_panel,
                 )
@@ -165,8 +164,6 @@ struct PreviewPanelContainer;
 #[derive(Resource)]
 struct AssetBrowserFolderTask(Task<Option<rfd::FileHandle>>);
 
-#[derive(Resource, Default)]
-struct PendingThumbnailLoads(Vec<(PathBuf, Handle<Image>)>);
 
 // ── Helpers (absorbed from texture_browser) ─────────────────────────────────
 
@@ -200,39 +197,6 @@ fn read_ktx2_info(path: &Path) -> (u32, u32) {
     (layer_count, face_count)
 }
 
-fn decode_image_from_disk(path: &Path) -> Option<Image> {
-    let bytes = std::fs::read(path).ok()?;
-    let ext = path.extension()?.to_str()?;
-    Image::from_buffer(
-        &bytes,
-        ImageType::Extension(ext),
-        CompressedImageFormats::NONE,
-        true,
-        ImageSampler::default(),
-        RenderAssetUsages::default(),
-    )
-    .ok()
-}
-
-/// Convert an absolute filesystem path to an asset-relative path.
-pub fn to_asset_relative_path(absolute: &str) -> Option<String> {
-    let abs_path = Path::new(absolute);
-
-    if let Some(project_dir) = crate::project::read_last_project() {
-        let assets_dir = project_dir.join("assets");
-        if let Ok(relative) = abs_path.strip_prefix(&assets_dir) {
-            return Some(relative.to_string_lossy().replace('\\', "/"));
-        }
-    }
-
-    let assets_dir = std::env::current_dir().ok()?.join("assets");
-    let relative = abs_path
-        .strip_prefix(&assets_dir)
-        .ok()?
-        .to_string_lossy()
-        .replace('\\', "/");
-    Some(relative)
-}
 
 // ── Systems ─────────────────────────────────────────────────────────────────
 
@@ -259,8 +223,6 @@ fn refresh_browser_on_change(
     mut commands: Commands,
     icon_font: Res<IconFont>,
     asset_server: Res<AssetServer>,
-    mut images: ResMut<Assets<Image>>,
-    mut pending: ResMut<PendingThumbnailLoads>,
     content_query: Query<(Entity, Option<&Children>), With<AssetBrowserContent>>,
     breadcrumb_query: Query<(Entity, Option<&Children>), With<AssetBrowserBreadcrumb>>,
     mut root_label_query: Query<&mut Text, With<AssetBrowserRootLabel>>,
@@ -305,13 +267,7 @@ fn refresh_browser_on_change(
                                 None
                             } else {
                                 // Load via asset server if inside asset root
-                                load_thumbnail(
-                                    &path,
-                                    &state.root_directory,
-                                    &asset_server,
-                                    &mut images,
-                                    &mut pending.0,
-                                )
+                                load_thumbnail(&path, &asset_server)
                             },
                             is_cubemap: face_count > 1,
                             is_array: layer_count > 1,
@@ -320,13 +276,7 @@ fn refresh_browser_on_change(
                         })
                     } else {
                         Some(TextureInfo {
-                            image_handle: load_thumbnail(
-                                &path,
-                                &state.root_directory,
-                                &asset_server,
-                                &mut images,
-                                &mut pending.0,
-                            ),
+                            image_handle: load_thumbnail(&path, &asset_server),
                             is_cubemap: false,
                             is_array: false,
                             layer_count: 1,
@@ -490,9 +440,9 @@ fn refresh_browser_on_change(
                         });
                     } else {
                         // 2D texture: apply to faces
-                        if let Some(relative) = to_asset_relative_path(&click_path) {
-                            commands.trigger(ApplyTextureToFaces { path: relative });
-                        }
+                        commands.trigger(ApplyTextureToFaces {
+                            path: click_path.clone(),
+                        });
                     }
                 },
             );
@@ -579,40 +529,9 @@ fn refresh_browser_on_change(
     }
 }
 
-fn load_thumbnail(
-    path: &Path,
-    asset_root: &Path,
-    asset_server: &AssetServer,
-    images: &mut Assets<Image>,
-    pending: &mut Vec<(PathBuf, Handle<Image>)>,
-) -> Option<Handle<Image>> {
-    if let Ok(relative) = path.strip_prefix(asset_root) {
-        let relative = relative.to_string_lossy().replace('\\', "/");
-        Some(asset_server.load(relative))
-    } else {
-        let handle = images.add(Image::default());
-        pending.push((path.to_path_buf(), handle.clone()));
-        Some(handle)
-    }
-}
-
-fn load_pending_thumbnails(
-    mut pending: ResMut<PendingThumbnailLoads>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    if pending.0.is_empty() {
-        return;
-    }
-    for _ in 0..2 {
-        let Some((path, handle)) = pending.0.pop() else {
-            return;
-        };
-        if let Some(loaded) = decode_image_from_disk(&path) {
-            if let Some(img) = images.get_mut(handle.id()) {
-                *img = loaded;
-            }
-        }
-    }
+fn load_thumbnail(path: &Path, asset_server: &AssetServer) -> Option<Handle<Image>> {
+    let abs = path.to_string_lossy().replace('\\', "/");
+    Some(asset_server.load(abs))
 }
 
 fn handle_file_double_click(
@@ -634,9 +553,9 @@ fn handle_file_double_click(
             .is_some_and(|e| e.eq_ignore_ascii_case("ktx2"))
             && is_ktx2_non_2d(p);
         if !is_non_2d {
-            if let Some(relative) = to_asset_relative_path(&event.path) {
-                commands.trigger(ApplyTextureToFaces { path: relative });
-            }
+            commands.trigger(ApplyTextureToFaces {
+                path: event.path.clone(),
+            });
         }
     }
 }
@@ -1039,9 +958,9 @@ fn update_preview_panel(
         commands
             .entity(apply_btn)
             .observe(move |_: On<Pointer<Click>>, mut commands: Commands| {
-                if let Some(relative) = to_asset_relative_path(&path_str) {
-                    commands.trigger(ApplyTextureToFaces { path: relative });
-                }
+                commands.trigger(ApplyTextureToFaces {
+                    path: path_str.clone(),
+                });
             });
         commands.entity(apply_btn).observe(
             |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {

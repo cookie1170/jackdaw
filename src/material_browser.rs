@@ -127,10 +127,33 @@ fn pbr_filename_regex() -> Option<regex::Regex> {
     regex::Regex::new(pattern).ok()
 }
 
+/// Returns `true` if the PNG file uses 16-bit (or higher) bit depth.
+///
+/// Bevy decodes such PNGs as `R16Uint` which is incompatible with
+/// `StandardMaterial`'s float-filterable `depth_map` slot.
+fn is_16bit_png(path: &Path) -> bool {
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("png"))
+    {
+        return false;
+    }
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    use std::io::Read;
+    // PNG layout: 8-byte signature, then IHDR chunk (4 len + 4 type + 13 data).
+    // Byte 24 (offset 24) is the bit depth field inside IHDR.
+    let mut header = [0u8; 25];
+    if file.read_exact(&mut header).is_err() {
+        return false;
+    }
+    header[24] >= 16
+}
+
 /// Scan a directory for PBR texture sets and create `StandardMaterial` assets.
 fn detect_and_create_materials(
     dir: &Path,
-    asset_root: &Path,
     asset_server: &AssetServer,
     materials: &mut Assets<StandardMaterial>,
 ) -> Vec<(String, Handle<StandardMaterial>)> {
@@ -140,7 +163,7 @@ fn detect_and_create_materials(
     };
 
     let mut groups: HashMap<String, Vec<(String, String)>> = HashMap::new();
-    scan_dir_recursive(dir, asset_root, &re, &mut groups);
+    scan_dir_recursive(dir, &re, &mut groups);
 
     let mut results = Vec::new();
     for (base_name, slots) in &groups {
@@ -172,7 +195,11 @@ fn detect_and_create_materials(
                     occlusion_texture = Some(asset_server.load::<Image>(asset_path.clone()));
                 }
                 "displacement" | "displace" | "disp" | "dsp" | "height" | "heightmap" => {
-                    depth_map = Some(asset_server.load::<Image>(asset_path.clone()));
+                    // Skip 16-bit integer PNGs — Bevy decodes them as R16Uint which
+                    // is incompatible with StandardMaterial's float-filterable depth_map slot.
+                    if !is_16bit_png(Path::new(asset_path)) {
+                        depth_map = Some(asset_server.load::<Image>(asset_path.clone()));
+                    }
                 }
                 _ => {}
             }
@@ -208,7 +235,6 @@ fn detect_and_create_materials(
 
 fn scan_dir_recursive(
     dir: &Path,
-    asset_root: &Path,
     re: &regex::Regex,
     groups: &mut HashMap<String, Vec<(String, String)>>,
 ) {
@@ -218,21 +244,28 @@ fn scan_dir_recursive(
     for entry in read_dir.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            scan_dir_recursive(&path, asset_root, re, groups);
+            scan_dir_recursive(&path, re, groups);
         } else {
             let file_name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
 
+            // Skip non-2D KTX2 files (cubemaps, texture arrays) — they can't
+            // be used as regular 2D textures in StandardMaterial.
+            if path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("ktx2"))
+                && crate::asset_browser::is_ktx2_non_2d(&path)
+            {
+                continue;
+            }
+
             if let Some(caps) = re.captures(&file_name) {
                 let base_name = caps[1].to_string();
                 let tag = caps[2].to_string();
 
-                let asset_path = path
-                    .strip_prefix(asset_root)
-                    .map(|r| r.to_string_lossy().replace('\\', "/"))
-                    .unwrap_or_else(|_| path.to_string_lossy().replace('\\', "/"));
+                let asset_path = path.to_string_lossy().replace('\\', "/");
 
                 groups
                     .entry(base_name.to_lowercase())
@@ -255,7 +288,7 @@ fn scan_material_definitions(
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("assets"));
     state.scan_directory = assets_dir.clone();
 
-    let detected = detect_and_create_materials(&state.scan_directory, &assets_dir, &asset_server, &mut materials);
+    let detected = detect_and_create_materials(&state.scan_directory, &asset_server, &mut materials);
     for (name, handle) in detected {
         if registry.get_by_name(&name).is_none() {
             registry.add(name, handle);
@@ -275,13 +308,13 @@ fn rescan_material_definitions(
     }
     state.needs_rescan = false;
 
-    let assets_dir = project_root
+    state.scan_directory = project_root
         .map(|p| p.assets_dir())
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("assets"));
 
     registry.entries.clear();
 
-    let detected = detect_and_create_materials(&state.scan_directory, &assets_dir, &asset_server, &mut materials);
+    let detected = detect_and_create_materials(&state.scan_directory, &asset_server, &mut materials);
     for (name, handle) in detected {
         registry.add(name, handle);
     }

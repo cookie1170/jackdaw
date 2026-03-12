@@ -1,4 +1,4 @@
-use bevy::{asset::AssetPlugin, light::GlobalAmbientLight, prelude::*};
+use bevy::{asset::{AssetPlugin, UnapprovedPathMode}, light::GlobalAmbientLight, prelude::*};
 use jackdaw::EditorPlugin;
 
 fn main() -> AppExit {
@@ -8,6 +8,7 @@ fn main() -> AppExit {
     App::new()
         .add_plugins(DefaultPlugins.set(AssetPlugin {
             file_path: project_root.join("assets").to_string_lossy().to_string(),
+            unapproved_path_mode: UnapprovedPathMode::Allow,
             ..default()
         }))
         .add_plugins(EditorPlugin)

@@ -305,22 +305,21 @@ impl<'a> ReflectSerializerProcessor for JsnSerializerProcessor<'a> {
                 .downcast_handle_untyped(value.as_any())
                 .expect("This must have been a handle");
 
+            // Check collected asset references first (both inline and external)
+            if let Some(inline_name) = self.inline_assets.get(&untyped_handle.id()) {
+                return Ok(Ok(serializer.serialize_str(inline_name)?));
+            }
+
             if let Some(path) = untyped_handle.path() {
-                // External asset — serialize as relative path
+                // Uncollected external asset — serialize as relative path (backward compat)
                 let rel = pathdiff::diff_paths(path.path(), &self.parent_path)
                     .unwrap_or_else(|| path.path().to_owned());
                 let mut path_str = rel.to_string_lossy().into_owned();
-                // Preserve label (e.g. #Scene0) if present
                 if let Some(label) = path.label() {
                     path_str.push('#');
                     path_str.push_str(label);
                 }
                 return Ok(Ok(serializer.serialize_str(&path_str)?));
-            }
-
-            if let Some(inline_name) = self.inline_assets.get(&untyped_handle.id()) {
-                // Inline asset — serialize as #Name reference
-                return Ok(Ok(serializer.serialize_str(inline_name)?));
             }
 
             // Unknown handle (no path, not inline) — serialize as null
@@ -635,8 +634,44 @@ fn collect_handles_from_reflect(
             .downcast_handle_untyped(value.as_any())
             .expect("This must have been a handle");
 
-        // Skip if it has a path (external asset) or already collected
-        if untyped_handle.path().is_some() || id_to_name.contains_key(&untyped_handle.id()) {
+        // Already collected — skip
+        if id_to_name.contains_key(&untyped_handle.id()) {
+            return;
+        }
+
+        // External file-backed resource — store as a path string entry
+        if let Some(asset_path) = untyped_handle.path() {
+            let asset_type_id = reflect_handle.asset_type_id();
+            let Some(asset_registration) = registry.get(asset_type_id) else {
+                return;
+            };
+            let asset_type_path = asset_registration
+                .type_info()
+                .type_path_table()
+                .path()
+                .to_string();
+
+            let counter = counters.entry(asset_type_path.clone()).or_insert(0);
+            let short_name = asset_type_path
+                .rsplit("::")
+                .next()
+                .unwrap_or(&asset_type_path);
+            let inline_name = format!("#{short_name}{counter}");
+            *counter += 1;
+
+            let rel = pathdiff::diff_paths(asset_path.path(), parent_path)
+                .unwrap_or_else(|| asset_path.path().to_owned());
+            let mut path_str = rel.to_string_lossy().into_owned();
+            if let Some(label) = asset_path.label() {
+                path_str.push('#');
+                path_str.push_str(label);
+            }
+
+            id_to_name.insert(untyped_handle.id(), inline_name.clone());
+            asset_data
+                .entry(asset_type_path)
+                .or_default()
+                .insert(inline_name, serde_json::Value::String(path_str));
             return;
         }
 
@@ -663,6 +698,18 @@ fn collect_handles_from_reflect(
         let Some(asset_reflect) = reflect_asset.get(world, untyped_handle.id()) else {
             return;
         };
+
+        // Recurse into the asset to collect nested handles (e.g. textures inside materials)
+        // before serializing, so they get #Name entries and the serializer emits refs not paths.
+        collect_handles_from_reflect(
+            asset_reflect.as_partial_reflect(),
+            registry,
+            world,
+            parent_path,
+            id_to_name,
+            asset_data,
+            counters,
+        );
 
         // Generate a name like "Material0", "Material1"
         let counter = counters.entry(asset_type_path.clone()).or_insert(0);
@@ -997,6 +1044,34 @@ pub fn load_inline_assets(
     let registry_guard = registry.read();
     let asset_server = world.resource::<AssetServer>().clone();
 
+    // First pass: load all string-value entries (external file refs like textures).
+    // These must be loaded before inline assets that may reference them.
+    for (type_path, named_entries) in &assets.0 {
+        for (name, json_value) in named_entries {
+            let serde_json::Value::String(rel_path) = json_value else {
+                continue;
+            };
+
+            let abs_path = if Path::new(rel_path).is_relative() {
+                parent_path.join(rel_path)
+            } else {
+                PathBuf::from(rel_path)
+            };
+            let path_str = abs_path.to_string_lossy().into_owned();
+
+            let handle = if type_path == "bevy_image::image::Image" {
+                asset_server.load::<Image>(&path_str).untyped()
+            } else {
+                warn!(
+                    "External asset entry '{name}' has unknown type '{type_path}' — loading untyped"
+                );
+                asset_server.load::<bevy::asset::LoadedUntypedAsset>(&path_str).untyped()
+            };
+            local_assets.insert(name.clone(), handle);
+        }
+    }
+
+    // Second pass: deserialize all object-value entries (inline assets like materials)
     for (type_path, named_entries) in &assets.0 {
         let Some(registration) = registry_guard.get_with_type_path(type_path) else {
             warn!("Unknown asset type '{type_path}' in inline assets — skipping");
@@ -1008,6 +1083,11 @@ pub fn load_inline_assets(
         };
 
         for (name, json_value) in named_entries {
+            // String entries already handled in first pass
+            if json_value.is_string() {
+                continue;
+            }
+
             // Deserialize with processor to resolve nested handles (e.g. textures in materials)
             let mut deser_processor = JsnDeserializerProcessor {
                 asset_server: &asset_server,
