@@ -128,6 +128,7 @@ pub struct CutResultPreviewMesh;
 pub struct CutPreviewFace {
     pub world_vertices: Vec<Vec3>,
     pub world_normal: Vec3,
+    pub is_default_material: bool,
 }
 
 /// Marker for brush face entities hidden during cut preview.
@@ -1677,6 +1678,7 @@ fn manage_draw_preview_mesh(
                         CutPreviewFace {
                             world_vertices: face_world_verts,
                             world_normal: face_data.plane.normal,
+                            is_default_material: face_data.material == Handle::default(),
                         },
                         NotShadowCaster,
                         NotShadowReceiver,

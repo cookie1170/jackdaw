@@ -68,47 +68,56 @@ pub(super) fn draw_brush_edit_gizmos(
         return;
     };
 
-    // Collect unique edges and track selected state
-    let mut drawn_edges: Vec<(usize, usize, bool)> = Vec::new();
-    for polygon in &cache.face_polygons {
-        if polygon.len() < 2 {
-            continue;
-        }
-        for i in 0..polygon.len() {
-            let a = polygon[i];
-            let b = polygon[(i + 1) % polygon.len()];
-            let edge = (a.min(b), a.max(b));
-            if !drawn_edges
-                .iter()
-                .any(|(ea, eb, _)| *ea == edge.0 && *eb == edge.1)
-            {
-                let selected = brush_selection.edges.contains(&edge);
-                drawn_edges.push((edge.0, edge.1, selected));
+    // In Clip mode, hide edge/vertex overlays on default-material brushes so the
+    // clip plane and cut preview are clearly visible.
+    let all_faces_default = brushes
+        .get(brush_entity)
+        .is_ok_and(|b| b.faces.iter().all(|f| f.material == Handle::default()));
+    let skip_wireframe = mode == BrushEditMode::Clip && all_faces_default;
+
+    if !skip_wireframe {
+        // Collect unique edges and track selected state
+        let mut drawn_edges: Vec<(usize, usize, bool)> = Vec::new();
+        for polygon in &cache.face_polygons {
+            if polygon.len() < 2 {
+                continue;
+            }
+            for i in 0..polygon.len() {
+                let a = polygon[i];
+                let b = polygon[(i + 1) % polygon.len()];
+                let edge = (a.min(b), a.max(b));
+                if !drawn_edges
+                    .iter()
+                    .any(|(ea, eb, _)| *ea == edge.0 && *eb == edge.1)
+                {
+                    let selected = brush_selection.edges.contains(&edge);
+                    drawn_edges.push((edge.0, edge.1, selected));
+                }
             }
         }
-    }
 
-    // Draw all edges
-    for &(a, b, selected) in &drawn_edges {
-        let wa = brush_global.transform_point(cache.vertices[a]);
-        let wb = brush_global.transform_point(cache.vertices[b]);
-        let color = if selected {
-            SELECTED_VERTEX_COLOR
-        } else {
-            EDIT_EDGE_COLOR
-        };
-        gizmos.line(wa, wb, color);
-    }
+        // Draw all edges
+        for &(a, b, selected) in &drawn_edges {
+            let wa = brush_global.transform_point(cache.vertices[a]);
+            let wb = brush_global.transform_point(cache.vertices[b]);
+            let color = if selected {
+                SELECTED_VERTEX_COLOR
+            } else {
+                EDIT_EDGE_COLOR
+            };
+            gizmos.line(wa, wb, color);
+        }
 
-    // Draw vertices as small spheres
-    for (vi, v) in cache.vertices.iter().enumerate() {
-        let world_pos = brush_global.transform_point(*v);
-        let color = if brush_selection.vertices.contains(&vi) {
-            SELECTED_VERTEX_COLOR
-        } else {
-            EDIT_VERTEX_COLOR
-        };
-        gizmos.sphere(Isometry3d::from_translation(world_pos), 0.04, color);
+        // Draw vertices as small spheres
+        for (vi, v) in cache.vertices.iter().enumerate() {
+            let world_pos = brush_global.transform_point(*v);
+            let color = if brush_selection.vertices.contains(&vi) {
+                SELECTED_VERTEX_COLOR
+            } else {
+                EDIT_VERTEX_COLOR
+            };
+            gizmos.sphere(Isometry3d::from_translation(world_pos), 0.04, color);
+        }
     }
 
     // Highlight selected faces

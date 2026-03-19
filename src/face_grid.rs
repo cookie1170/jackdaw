@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use bevy::color::palettes::tailwind;
 use bevy::prelude::*;
 
-use crate::brush::{Brush, BrushMeshCache};
+use crate::brush::{Brush, BrushEditMode, BrushMeshCache, EditMode};
 use crate::draw_brush::{CutPreviewFace, CutPreviewHidden, CutResultPreviewMesh};
 use crate::selection::Selected;
 use crate::snapping::SnapSettings;
@@ -44,8 +44,9 @@ fn configure_face_grid_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
 fn draw_brush_edges(
     mut gizmos: Gizmos<FaceGridGizmoGroup>,
     settings: Res<OverlaySettings>,
+    edit_mode: Res<EditMode>,
     brushes: Query<
-        (&BrushMeshCache, &GlobalTransform, Has<Selected>, &InheritedVisibility),
+        (&Brush, &BrushMeshCache, &GlobalTransform, Has<Selected>, &InheritedVisibility),
         Without<CutPreviewHidden>,
     >,
 ) {
@@ -53,10 +54,22 @@ fn draw_brush_edges(
         return;
     }
 
-    for (cache, global_tf, is_selected, inherited_vis) in &brushes {
+    let in_clip_mode = matches!(*edit_mode, EditMode::BrushEdit(BrushEditMode::Clip));
+
+    for (brush, cache, global_tf, is_selected, inherited_vis) in &brushes {
         if !inherited_vis.get() {
             continue;
         }
+
+        // In Clip mode, hide wireframe on selected default-material brushes so
+        // the clip plane and cut preview are clearly visible.
+        if in_clip_mode {
+            let all_default = brush.faces.iter().all(|f| f.material == Handle::default());
+            if all_default {
+                continue;
+            }
+        }
+
         let color: Color = if is_selected {
             tailwind::CYAN_400.into()
         } else {
@@ -220,6 +233,9 @@ fn draw_cut_preview_edges(
     let color: Color = tailwind::CYAN_400.into();
 
     for face in &previews {
+        if face.is_default_material {
+            continue;
+        }
         let verts = &face.world_vertices;
         if verts.len() < 3 {
             continue;
@@ -247,6 +263,9 @@ fn draw_cut_preview_grids(
     let color = Color::from(tailwind::GRAY_600).with_alpha(0.5);
 
     for face in &previews {
+        if face.is_default_material {
+            continue;
+        }
         let world_verts = &face.world_vertices;
         if world_verts.len() < 3 {
             continue;
