@@ -646,7 +646,9 @@ fn handle_apply_material(
                 };
                 history.undo_stack.push(Box::new(cmd));
                 history.redo_stack.clear();
-                commands.entity(entity).insert(crate::inspector::InspectorDirty);
+                commands
+                    .entity(entity)
+                    .insert(crate::inspector::InspectorDirty);
             }
         }
     } else {
@@ -679,7 +681,9 @@ fn handle_apply_material(
                 };
                 history.undo_stack.push(Box::new(cmd));
                 history.redo_stack.clear();
-                commands.entity(entity).insert(crate::inspector::InspectorDirty);
+                commands
+                    .entity(entity)
+                    .insert(crate::inspector::InspectorDirty);
             }
         }
     }
@@ -915,7 +919,11 @@ fn update_preview_area(
         let path_text = tex_handle
             .as_ref()
             .and_then(|h| h.path())
-            .and_then(|p| p.path().file_name().map(|f| f.to_string_lossy().to_string()))
+            .and_then(|p| {
+                p.path()
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+            })
             .unwrap_or_else(|| "(none)".to_string());
         let path_color = tokens::TEXT_SECONDARY;
         commands.spawn((

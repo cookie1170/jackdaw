@@ -2035,13 +2035,7 @@ pub(super) fn brush_face_hover(
     }
 
     // Determine if we should show hover
-    let should_hover = if in_face_edit {
-        true
-    } else if *edit_mode == EditMode::Object && (shift || alt) {
-        true
-    } else {
-        false
-    };
+    let should_hover = in_face_edit || (*edit_mode == EditMode::Object && (shift || alt));
 
     if !should_hover {
         hover.entity = None;

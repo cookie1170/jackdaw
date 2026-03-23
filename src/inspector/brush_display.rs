@@ -112,9 +112,7 @@ fn spawn_material_summary(
     }
 
     let total_faces = brush.faces.len();
-    let any_has_material = material_counts
-        .iter()
-        .any(|(h, _)| *h != Handle::default());
+    let any_has_material = material_counts.iter().any(|(h, _)| *h != Handle::default());
 
     // Section header
     commands.spawn((

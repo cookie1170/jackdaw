@@ -519,9 +519,7 @@ fn on_secondary_action_button_click(
         return;
     };
 
-    if let Some(dialog_entity) =
-        find_dialog_ancestor(button_parent.parent(), &parents, &dialogs)
-    {
+    if let Some(dialog_entity) = find_dialog_ancestor(button_parent.parent(), &parents, &dialogs) {
         commands.trigger(DialogSecondaryActionEvent {
             entity: dialog_entity,
         });

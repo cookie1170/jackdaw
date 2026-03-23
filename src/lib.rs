@@ -620,7 +620,10 @@ fn open_recent_dialog(world: &mut World) {
         return;
     };
 
-    let editor_font = world.resource::<jackdaw_feathers::icons::EditorFont>().0.clone();
+    let editor_font = world
+        .resource::<jackdaw_feathers::icons::EditorFont>()
+        .0
+        .clone();
 
     for entry in &recent.projects {
         let path = entry.path.clone();
@@ -684,9 +687,7 @@ fn open_recent_dialog(world: &mut World) {
         world.commands().entity(row).observe(
             move |_: On<Pointer<Click>>, mut commands: Commands| {
                 let path = path.clone();
-                commands.insert_resource(project_select::PendingAutoOpen {
-                    path: path.clone(),
-                });
+                commands.insert_resource(project_select::PendingAutoOpen { path: path.clone() });
                 commands.trigger(jackdaw_feathers::dialog::CloseDialogEvent);
                 commands.queue(move |world: &mut World| {
                     world

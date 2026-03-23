@@ -67,10 +67,7 @@ impl Plugin for SceneIoPlugin {
             )
             .add_systems(
                 Update,
-                (
-                    poll_scene_dialog,
-                    cleanup_pending_new_scene,
-                )
+                (poll_scene_dialog, cleanup_pending_new_scene)
                     .run_if(in_state(crate::AppState::Editor)),
             )
             .add_observer(on_new_scene_save)
@@ -272,7 +269,10 @@ fn save_scene_inner(world: &mut World) {
     scene_path.metadata = metadata;
 
     // Mark scene as clean
-    let history_len = world.resource::<jackdaw_commands::CommandHistory>().undo_stack.len();
+    let history_len = world
+        .resource::<jackdaw_commands::CommandHistory>()
+        .undo_stack
+        .len();
     world.resource_mut::<SceneDirtyState>().undo_len_at_save = history_len;
 
     // Write to disk on the IO task pool

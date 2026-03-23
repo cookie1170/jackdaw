@@ -12,7 +12,7 @@ use jackdaw_jsn::JsnPlugin;
 
 fn main() -> AppExit {
     App::new()
-        .add_plugins((DefaultPlugins, JsnPlugin))
+        .add_plugins((DefaultPlugins, JsnPlugin::default()))
         .add_systems(Startup, setup)
         .run()
 }

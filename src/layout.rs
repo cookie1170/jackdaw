@@ -299,9 +299,27 @@ fn toolbar(icon_font: Handle<Font>) -> impl Bundle {
         BackgroundColor(tokens::TOOLBAR_BG),
         children![
             // Gizmo mode buttons
-            toolbar_button(Icon::Move, "", GizmoMode::Translate, icon_font.clone(), "Move (Esc)"),
-            toolbar_button(Icon::RotateCw, "R", GizmoMode::Rotate, icon_font.clone(), "Rotate (R)"),
-            toolbar_button(Icon::Scaling, "T", GizmoMode::Scale, icon_font.clone(), "Scale (T)"),
+            toolbar_button(
+                Icon::Move,
+                "",
+                GizmoMode::Translate,
+                icon_font.clone(),
+                "Move (Esc)"
+            ),
+            toolbar_button(
+                Icon::RotateCw,
+                "R",
+                GizmoMode::Rotate,
+                icon_font.clone(),
+                "Rotate (R)"
+            ),
+            toolbar_button(
+                Icon::Scaling,
+                "T",
+                GizmoMode::Scale,
+                icon_font.clone(),
+                "Scale (T)"
+            ),
             // Separator
             separator::separator(separator::SeparatorProps::vertical()),
             // Space toggle
@@ -309,12 +327,37 @@ fn toolbar(icon_font: Handle<Font>) -> impl Bundle {
             // Separator
             separator::separator(separator::SeparatorProps::vertical()),
             // Edit mode buttons
-            toolbar_edit_button(Icon::MousePointer, EditToolButton::Object, f.clone(), "Object Mode"),
+            toolbar_edit_button(
+                Icon::MousePointer,
+                EditToolButton::Object,
+                f.clone(),
+                "Object Mode"
+            ),
             toolbar_edit_button(Icon::Box, EditToolButton::Draw, f.clone(), "Draw Brush (B)"),
-            toolbar_edit_button(Icon::CircleDot, EditToolButton::Vertex, f.clone(), "Vertex Mode (1)"),
-            toolbar_edit_button(Icon::GitCommitHorizontal, EditToolButton::Edge, f.clone(), "Edge Mode (2)"),
-            toolbar_edit_button(Icon::Hexagon, EditToolButton::Face, f.clone(), "Face Mode (3)"),
-            toolbar_edit_button(Icon::ScissorsLineDashed, EditToolButton::Clip, f.clone(), "Clip Mode (4)"),
+            toolbar_edit_button(
+                Icon::CircleDot,
+                EditToolButton::Vertex,
+                f.clone(),
+                "Vertex Mode (1)"
+            ),
+            toolbar_edit_button(
+                Icon::GitCommitHorizontal,
+                EditToolButton::Edge,
+                f.clone(),
+                "Edge Mode (2)"
+            ),
+            toolbar_edit_button(
+                Icon::Hexagon,
+                EditToolButton::Face,
+                f.clone(),
+                "Face Mode (3)"
+            ),
+            toolbar_edit_button(
+                Icon::ScissorsLineDashed,
+                EditToolButton::Clip,
+                f.clone(),
+                "Clip Mode (4)"
+            ),
             // Spacer pushes help button to the right
             (Node {
                 flex_grow: 1.0,
@@ -915,10 +958,8 @@ pub fn update_toolbar_tooltips(
                 ChildOf(tip),
             ));
             active.0 = Some(tip);
-        } else {
-            if let Some(old) = active.0.take() {
-                commands.entity(old).try_despawn();
-            }
+        } else if let Some(old) = active.0.take() {
+            commands.entity(old).try_despawn();
         }
     }
 }

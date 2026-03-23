@@ -1,12 +1,12 @@
 use std::f32::consts::FRAC_PI_2;
 
-use avian3d::parry::math::Point as ParryPoint;
-use avian3d::parry::transformation::convex_hull;
-use bevy::prelude::*;
 use crate::brush::{self, BrushMeshCache};
 use crate::colors;
 use crate::selection::Selected;
 use crate::viewport::SceneViewport;
+use avian3d::parry::math::Point as ParryPoint;
+use avian3d::parry::transformation::convex_hull;
+use bevy::prelude::*;
 use jackdaw_jsn::BrushGroup;
 
 #[derive(Component)]
@@ -403,10 +403,7 @@ fn draw_camera_gizmo(
     }
 }
 
-fn spawn_axis_labels(
-    mut commands: Commands,
-    viewport_entity: Single<Entity, With<SceneViewport>>,
-) {
+fn spawn_axis_labels(mut commands: Commands, viewport_entity: Single<Entity, With<SceneViewport>>) {
     let labels = [
         ("X", colors::AXIS_X_BRIGHT),
         ("Y", colors::AXIS_Y_BRIGHT),

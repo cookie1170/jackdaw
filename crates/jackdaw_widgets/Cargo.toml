@@ -1,6 +1,6 @@
 [package]
 name = "jackdaw_widgets"
-version = "0.1.5"
+version = "0.2.0"
 edition = "2024"
 description = "Internal crate for the jackdaw editor"
 license = "MIT OR Apache-2.0"

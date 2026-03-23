@@ -683,7 +683,7 @@ pub fn on_remote_tree_node_expanded(
                 .cloned()
                 .collect();
 
-            children.sort_by(|a, b| display_name(a).cmp(&display_name(b)));
+            children.sort_by_key(|a| display_name(a));
 
             let gc_map: HashMap<u64, bool> = children
                 .iter()
@@ -811,11 +811,7 @@ pub fn cleanup_remote_proxies(
 
     // Reset status text
     for entity in &status_texts {
-        if let Some(mut text) = commands
-            .get_entity(entity)
-            .ok()
-            .and_then(|_| None::<Mut<Text>>)
-        {
+        if let Some(mut text) = commands.get_entity(entity).ok().and(None::<Mut<Text>>) {
             text.0 = "Not connected".to_string();
         }
     }

@@ -123,8 +123,7 @@ fn cache_reference_coords(
         return;
     }
 
-    let dragging =
-        is_translate_drag_active(&gizmo_drag, &gizmo_mode, &modal_state, &viewport_drag);
+    let dragging = is_translate_drag_active(&gizmo_drag, &gizmo_mode, &modal_state, &viewport_drag);
 
     if !dragging {
         state.cache_valid = false;

@@ -660,7 +660,9 @@ fn handle_apply_texture(
                 };
                 history.undo_stack.push(Box::new(cmd));
                 history.redo_stack.clear();
-                commands.entity(entity).insert(crate::inspector::InspectorDirty);
+                commands
+                    .entity(entity)
+                    .insert(crate::inspector::InspectorDirty);
             }
         }
     } else {
@@ -693,7 +695,9 @@ fn handle_apply_texture(
                 };
                 history.undo_stack.push(Box::new(cmd));
                 history.redo_stack.clear();
-                commands.entity(entity).insert(crate::inspector::InspectorDirty);
+                commands
+                    .entity(entity)
+                    .insert(crate::inspector::InspectorDirty);
             }
         }
     }

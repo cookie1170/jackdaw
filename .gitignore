@@ -4,5 +4,7 @@
 .cargo/config.toml
 # mdBook build output
 /book/book
+# Large media files
+*.mp4
 # Claude Code
 .claude/
