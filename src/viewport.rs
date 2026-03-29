@@ -87,6 +87,7 @@ pub(crate) fn setup_viewport(
             RenderTarget::Image(image_handle.into()),
             Transform::from_xyz(0.0, 4.0, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
             JackdawCameraSettings::default(),
+            bevy::camera::visibility::RenderLayers::layer(0),
         ))
         .id();
 

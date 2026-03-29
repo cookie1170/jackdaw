@@ -114,17 +114,11 @@ pub struct SetBrush {
 
 impl EditorCommand for SetBrush {
     fn execute(&mut self, world: &mut World) {
-        if let Some(mut brush) = world.get_mut::<Brush>(self.entity) {
-            *brush = self.new.clone();
-        }
-        jackdaw_bsn::sync_to_ast(world, self.entity, std::any::TypeId::of::<Brush>());
+        crate::commands::apply_component_bsn(world, self.entity, &self.new);
     }
 
     fn undo(&mut self, world: &mut World) {
-        if let Some(mut brush) = world.get_mut::<Brush>(self.entity) {
-            *brush = self.old.clone();
-        }
-        jackdaw_bsn::sync_to_ast(world, self.entity, std::any::TypeId::of::<Brush>());
+        crate::commands::apply_component_bsn(world, self.entity, &self.old);
     }
 
     fn description(&self) -> &str {

@@ -1,9 +1,8 @@
-use std::any::TypeId;
 use std::path::Path;
 
 use bevy::{
     ecs::{
-        reflect::{AppTypeRegistry, ReflectComponent},
+        reflect::AppTypeRegistry,
         system::SystemState,
     },
     gltf::GltfAssetLabel,
@@ -17,23 +16,33 @@ use crate::{
 };
 use bevy::input_focus::InputFocus;
 
-/// Resource storing copied component data for paste operations.
-#[derive(Resource, Default)]
-pub struct ComponentClipboard {
-    /// Snapshots of component data: (type_id, reflected_data)
-    pub data: Vec<(TypeId, Box<dyn PartialReflect>)>,
-}
-
 // Re-export from jackdaw_jsn
 pub use jackdaw_jsn::GltfSource;
+
+/// Persistent system clipboard. On Linux/X11 the clipboard is ownership-based:
+/// the data is only available while the `Clipboard` instance that wrote it is
+/// alive. Storing it as a Bevy Resource keeps it alive for the app's lifetime.
+#[derive(Resource)]
+pub struct SystemClipboard {
+    clipboard: arboard::Clipboard,
+    /// Fallback: last copied BSN text, in case the system clipboard read fails.
+    last_bsn: String,
+}
 
 pub struct EntityOpsPlugin;
 
 impl Plugin for EntityOpsPlugin {
     fn build(&self, app: &mut App) {
         // Note: GltfSource type registration is handled by JsnPlugin
-        app.init_resource::<ComponentClipboard>()
-            .add_systems(Update, handle_entity_keys.in_set(crate::EditorInteraction));
+        match arboard::Clipboard::new() {
+            Ok(clipboard) => {
+                app.insert_resource(SystemClipboard { clipboard, last_bsn: String::new() });
+            }
+            Err(e) => {
+                warn!("Failed to initialize system clipboard: {e}");
+            }
+        }
+        app.add_systems(Update, handle_entity_keys.in_set(crate::EditorInteraction));
     }
 }
 
@@ -700,96 +709,184 @@ fn rotate_selected(world: &mut World, rotation: Quat) {
     }
 }
 
-/// Copy all reflected components from the primary selected entity to the clipboard.
+/// Copy selected entities as BSN text to the system clipboard.
 fn copy_components(world: &mut World) {
     let selection = world.resource::<Selection>();
-    let Some(primary) = selection.primary() else {
-        return;
-    };
-
-    let registry = world.resource::<AppTypeRegistry>().clone();
-    let registry = registry.read();
-
-    let Ok(entity_ref) = world.get_entity(primary) else {
-        return;
-    };
-
-    let mut data = Vec::new();
-    for registration in registry.iter() {
-        let type_id = registration.type_id();
-        let Some(reflect_component) = registration.data::<ReflectComponent>() else {
-            continue;
-        };
-        let Some(reflected) = reflect_component.reflect(entity_ref) else {
-            continue;
-        };
-
-        // Skip internal types
-        let path = registration.type_info().type_path_table().path();
-        if path.starts_with("jackdaw") || path.contains("ChildOf") || path.contains("Children") {
-            continue;
-        }
-
-        data.push((type_id, reflected.to_dynamic()));
-    }
-
-    drop(registry);
-
-    let mut clipboard = world.resource_mut::<ComponentClipboard>();
-    clipboard.data = data;
-}
-
-/// Paste component values from clipboard onto all selected entities.
-fn paste_components(world: &mut World) {
-    let clipboard_data: Vec<(TypeId, Box<dyn PartialReflect>)> = {
-        let clipboard = world.resource::<ComponentClipboard>();
-        if clipboard.data.is_empty() {
-            return;
-        }
-        clipboard
-            .data
-            .iter()
-            .map(|(tid, val)| (*tid, val.to_dynamic()))
-            .collect()
-    };
-
-    let selection = world.resource::<Selection>();
-    let entities: Vec<Entity> = selection.entities.clone();
-
-    if entities.is_empty() {
+    if selection.entities.is_empty() {
         return;
     }
 
-    let registry = world.resource::<AppTypeRegistry>().clone();
-    let registry = registry.read();
+    let ast = world.resource::<jackdaw_bsn::SceneBsnAst>();
+    let ast_entities: Vec<Entity> = selection
+        .entities
+        .iter()
+        .filter_map(|&e| ast.ast_for(e))
+        .collect();
 
-    for &entity in &entities {
-        if world.get_entity(entity).is_err() {
-            continue;
-        }
+    if ast_entities.is_empty() {
+        warn!("Copy: no selected entities have AST nodes");
+        return;
+    }
 
-        for (type_id, value) in &clipboard_data {
-            let Some(registration) = registry.get(*type_id) else {
-                continue;
-            };
-            let Some(reflect_component) = registration.data::<ReflectComponent>() else {
-                continue;
-            };
+    let bsn_text = jackdaw_bsn::emit_entities(ast, &ast_entities);
+    if bsn_text.trim().is_empty() {
+        return;
+    }
 
-            // Apply: if component exists, update it; if not, insert it
-            let has_component = {
-                let entity_ref = world.get_entity(entity).unwrap();
-                reflect_component.reflect(entity_ref).is_some()
-            };
-            if has_component {
-                let existing = reflect_component
-                    .reflect_mut(world.entity_mut(entity))
-                    .unwrap();
-                existing.into_inner().apply(value.as_ref());
-            } else {
-                reflect_component.insert(&mut world.entity_mut(entity), value.as_ref(), &registry);
+    let Some(mut cb) = world.get_resource_mut::<SystemClipboard>() else {
+        return;
+    };
+    cb.last_bsn = bsn_text.clone();
+
+    // Diagnostic: log what we're copying and display server info
+    info!("BSN copy ({} bytes):\n{}", bsn_text.len(), &bsn_text);
+    info!(
+        "Display: WAYLAND_DISPLAY={:?} DISPLAY={:?}",
+        std::env::var("WAYLAND_DISPLAY").ok(),
+        std::env::var("DISPLAY").ok()
+    );
+
+    match cb.clipboard.set_text(&bsn_text) {
+        Ok(()) => {
+            // Verify roundtrip: can we read back what we just wrote?
+            match cb.clipboard.get_text() {
+                Ok(readback) => info!("Clipboard set+readback OK ({} bytes)", readback.len()),
+                Err(e) => warn!("Clipboard set OK but readback failed: {e}"),
             }
         }
+        Err(e) => warn!("Failed to set clipboard: {e}"),
+    }
+}
+
+/// Paste BSN text from system clipboard to spawn new entities.
+fn paste_components(world: &mut World) {
+    let bsn_text = {
+        let Some(mut cb) = world.get_resource_mut::<SystemClipboard>() else {
+            return;
+        };
+        cb.clipboard.get_text().unwrap_or_else(|_| cb.last_bsn.clone())
+    };
+
+    if bsn_text.trim().is_empty() {
+        return;
+    }
+
+    let parsed = match jackdaw_bsn::parse_bsn_text(&bsn_text) {
+        Ok(ast) => ast,
+        Err(e) => {
+            warn!("Clipboard text is not valid BSN: {e}");
+            return;
+        }
+    };
+
+    // Merge parsed AST nodes into the scene AST.
+    let new_roots: Vec<Entity> = {
+        let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
+        let mut new_roots = Vec::new();
+        for &root in &parsed.roots {
+            let merged = merge_ast_node(&parsed, root, &mut ast);
+            new_roots.push(merged);
+        }
+        new_roots
+    };
+
+    // Register as scene roots and spawn ECS entities.
+    for &root in &new_roots {
+        world.resource_mut::<jackdaw_bsn::SceneBsnAst>().add_to_roots(root);
+    }
+
+    let mut spawned = Vec::new();
+    for &root in &new_roots {
+        spawn_pasted_node(world, root, None, &mut spawned);
+    }
+
+    // Apply BSN patches to populate ECS components.
+    jackdaw_bsn::apply_dirty_ast_patches(world);
+
+    // Select the newly spawned root entities.
+    let selection_entities: Vec<Entity> = new_roots
+        .iter()
+        .filter_map(|&ast_root| world.resource::<jackdaw_bsn::SceneBsnAst>().ecs_for_ast(ast_root))
+        .collect();
+
+    if !selection_entities.is_empty() {
+        for &entity in &world.resource::<Selection>().entities.clone() {
+            if let Ok(mut ec) = world.get_entity_mut(entity) {
+                ec.remove::<Selected>();
+            }
+        }
+        let mut selection = world.resource_mut::<Selection>();
+        selection.entities = selection_entities.clone();
+        for &entity in &selection_entities {
+            world.entity_mut(entity).insert(Selected);
+        }
+    }
+
+    info!("Pasted {} entities from BSN clipboard", new_roots.len());
+}
+
+/// Recursively merge an AST node from a parsed AST into the scene AST.
+/// Returns the new entity in the scene AST.
+fn merge_ast_node(
+    source: &jackdaw_bsn::SceneBsnAst,
+    source_entity: Entity,
+    target: &mut jackdaw_bsn::SceneBsnAst,
+) -> Entity {
+    let Some(patches) = source.get_patches(source_entity) else {
+        return target.world.spawn(jackdaw_bsn::BsnPatches(Vec::new())).id();
+    };
+
+    let mut new_patch_entities = Vec::new();
+    for &patch_entity in &patches.0 {
+        let Some(patch) = source.get_patch(patch_entity) else {
+            continue;
+        };
+        let new_patch = match patch {
+            jackdaw_bsn::BsnPatch::Children(children) => {
+                let new_children: Vec<Entity> = children
+                    .iter()
+                    .map(|&child| merge_ast_node(source, child, target))
+                    .collect();
+                jackdaw_bsn::BsnPatch::Children(new_children)
+            }
+            other => other.clone(),
+        };
+        let pe = target.world.spawn(new_patch).id();
+        new_patch_entities.push(pe);
+    }
+
+    target.world.spawn(jackdaw_bsn::BsnPatches(new_patch_entities)).id()
+}
+
+/// Spawn ECS entities for pasted AST nodes, linking them to the scene AST.
+fn spawn_pasted_node(
+    world: &mut World,
+    ast_entity: Entity,
+    parent: Option<Entity>,
+    spawned: &mut Vec<Entity>,
+) {
+    let ecs_entity = world
+        .spawn((
+            jackdaw_bsn::AstNodeRef { patches_entity: ast_entity },
+            jackdaw_bsn::AstDirty,
+            Visibility::default(),
+        ))
+        .id();
+
+    if let Some(parent) = parent {
+        world.entity_mut(ecs_entity).insert(ChildOf(parent));
+    }
+
+    world.resource_mut::<jackdaw_bsn::SceneBsnAst>().link(ecs_entity, ast_entity);
+    spawned.push(ecs_entity);
+
+    let children_ast = {
+        let ast = world.resource::<jackdaw_bsn::SceneBsnAst>();
+        ast.get_children_ast(ast_entity)
+    };
+
+    for child_ast in children_ast {
+        spawn_pasted_node(world, child_ast, Some(ecs_entity), spawned);
     }
 }
 

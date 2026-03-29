@@ -1004,6 +1004,9 @@ fn revert_component_to_baseline(world: &mut World, entity: Entity, component_id:
 
     drop(registry);
 
+    // Sync reverted component to BSN AST
+    jackdaw_bsn::sync_to_ast(world, entity, type_id);
+
     // Trigger inspector rebuild
     world.entity_mut(entity).insert(InspectorDirty);
 }

@@ -16,7 +16,8 @@ pub struct JackdawBsnPlugin;
 
 impl Plugin for JackdawBsnPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<SceneBsnAst>()
-            .add_systems(PostUpdate, apply_dirty_ast_patches);
+        app.init_resource::<SceneBsnAst>();
+        // Note: apply_dirty_ast_patches is NOT a per-frame system.
+        // It's called explicitly during scene loading only.
     }
 }

@@ -43,6 +43,7 @@ regex.workspace = true
 pathdiff.workspace = true
 avian3d.workspace = true
 notify = "8"
+arboard = { version = "3", features = ["wayland-data-control"] }
 
 [workspace.dependencies]
 bevy = { git = "https://github.com/jbuehler23/bevy", branch = "bsn", features = ["experimental_bevy_feathers", "serialize", "debug", "bevy_remote", "file_watcher", "bevy_dev_tools"] }

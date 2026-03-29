@@ -2136,12 +2136,10 @@ impl EditorCommand for SetEnumVariant {
     fn execute(&mut self, world: &mut World) {
         apply_enum_variant_to_ecs(world, self.entity, self.component_type_id, &self.field_path, &self.variant_name);
         jackdaw_bsn::sync_to_ast(world, self.entity, self.component_type_id);
-        world.entity_mut(self.entity).insert(jackdaw_bsn::AstDirty);
+        world.entity_mut(self.entity).insert((jackdaw_bsn::AstDirty, crate::inspector::InspectorDirty));
     }
 
     fn undo(&mut self, world: &mut World) {
-        // Restore by re-applying the old variant
-        // Extract the variant name from old_value
         let old_variant = match &self.old_value {
             BsnValue::Type(tp) => {
                 tp.rsplit_once("::").map(|(_, v)| v.to_string()).unwrap_or(tp.clone())
@@ -2153,7 +2151,7 @@ impl EditorCommand for SetEnumVariant {
         };
         apply_enum_variant_to_ecs(world, self.entity, self.component_type_id, &self.field_path, &old_variant);
         jackdaw_bsn::sync_to_ast(world, self.entity, self.component_type_id);
-        world.entity_mut(self.entity).insert(jackdaw_bsn::AstDirty);
+        world.entity_mut(self.entity).insert((jackdaw_bsn::AstDirty, crate::inspector::InspectorDirty));
     }
 
     fn description(&self) -> &str {
@@ -2178,18 +2176,70 @@ fn apply_enum_variant_to_ecs(
 
     let Ok(entity_ref) = world.get_entity(entity) else { return };
     let Some(reflected) = reflect_component.reflect(entity_ref) else { return };
-    let mut value = reflected.to_dynamic();
+    // Create a default instance and set it to the desired variant.
+    // This ensures tuple/struct variants get proper default field values.
+    let Some(reflect_default) = registration.data::<bevy::reflect::prelude::ReflectDefault>() else {
+        drop(reg);
+        return;
+    };
+    let mut value = reflect_default.default();
 
-    // For root-level enums (field_path is empty), apply directly
     if field_path.is_empty() {
         if let ReflectMut::Enum(e) = value.reflect_mut() {
-            let dynamic_enum = DynamicEnum::new(variant_name, DynamicVariant::Unit);
+            // Look up the variant info to construct the right DynamicVariant
+            let variant_info = e.get_represented_type_info()
+                .and_then(|info| {
+                    if let bevy::reflect::TypeInfo::Enum(enum_info) = info {
+                        enum_info.variant(variant_name).cloned()
+                    } else {
+                        None
+                    }
+                });
+
+            let dynamic_variant = match variant_info {
+                Some(bevy::reflect::enums::VariantInfo::Struct(ref info)) => {
+                    let mut ds = bevy::reflect::structs::DynamicStruct::default();
+                    let mut ok = true;
+                    for i in 0..info.field_len() {
+                        let field_info = info.field_at(i).unwrap();
+                        if let Some(field_reg) = reg.get(field_info.type_id()) {
+                            if let Some(rd) = field_reg.data::<bevy::reflect::prelude::ReflectDefault>() {
+                                ds.insert_boxed(field_info.name(), rd.default().into_partial_reflect());
+                                continue;
+                            }
+                        }
+                        warn!("Cannot switch to variant '{variant_name}': field '{}' has no default", field_info.name());
+                        ok = false;
+                        break;
+                    }
+                    if !ok { drop(reg); return; }
+                    DynamicVariant::Struct(ds)
+                }
+                Some(bevy::reflect::enums::VariantInfo::Tuple(ref info)) => {
+                    let mut dt = bevy::reflect::tuple::DynamicTuple::default();
+                    let mut ok = true;
+                    for i in 0..info.field_len() {
+                        let field_info = info.field_at(i).unwrap();
+                        if let Some(field_reg) = reg.get(field_info.type_id()) {
+                            if let Some(rd) = field_reg.data::<bevy::reflect::prelude::ReflectDefault>() {
+                                dt.insert_boxed(rd.default().into_partial_reflect());
+                                continue;
+                            }
+                        }
+                        warn!("Cannot switch to variant '{variant_name}': tuple field {i} has no default");
+                        ok = false;
+                        break;
+                    }
+                    if !ok { drop(reg); return; }
+                    DynamicVariant::Tuple(dt)
+                }
+                _ => DynamicVariant::Unit,
+            };
+
+            let dynamic_enum = DynamicEnum::new(variant_name, dynamic_variant);
             e.apply(&dynamic_enum);
         }
     }
-    // For nested enum fields within struct components, we'd need reflect_path_mut
-    // which requires Reflect (not PartialReflect). Root-level enum components
-    // (like ColliderConstructor, RigidBody) always have empty field_path.
 
     reflect_component.insert(&mut world.entity_mut(entity), value.as_partial_reflect(), &reg);
 }

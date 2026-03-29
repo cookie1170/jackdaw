@@ -12,6 +12,36 @@ use crate::{BsnField, BsnPatch, BsnStructData, BsnTupleStructData, BsnValue, Sce
 /// - 1 root: emits patches directly.
 /// - 2+ roots: wraps in `Children [(...), (...)]` so that bevy's
 ///   `TopLevelPatchesParser` can round-trip.
+/// Emits BSN text for a single entity (and its children) from the AST.
+/// Used for clipboard copy — the output is valid `bsn!` macro input.
+pub fn emit_entity(ast: &SceneBsnAst, patches_entity: bevy::prelude::Entity) -> String {
+    let mut out = String::new();
+    emit_patches(ast, patches_entity, 0, &mut out);
+    out
+}
+
+/// Emits BSN text for multiple entities. Single entity emits directly;
+/// multiple entities are wrapped in `Children [...]` like a multi-root scene.
+pub fn emit_entities(ast: &SceneBsnAst, entities: &[bevy::prelude::Entity]) -> String {
+    let mut out = String::new();
+    if entities.len() <= 1 {
+        for &e in entities {
+            emit_patches(ast, e, 0, &mut out);
+        }
+    } else {
+        writeln!(out, "bevy_ecs::hierarchy::Children [").unwrap();
+        for (i, &e) in entities.iter().enumerate() {
+            emit_patches(ast, e, 1, &mut out);
+            if i + 1 < entities.len() {
+                write_indent(1, &mut out);
+                out.push_str(",\n");
+            }
+        }
+        writeln!(out, "]").unwrap();
+    }
+    out
+}
+
 pub fn emit_scene(ast: &SceneBsnAst) -> String {
     let mut out = String::new();
 

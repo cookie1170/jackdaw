@@ -12,7 +12,7 @@ use bevy::{
 pub use jackdaw_commands::{CommandGroup, CommandHistory, EditorCommand};
 
 use jackdaw_bsn::{
-    AstDirty, BsnValue, SceneBsnAst,
+    BsnValue, SceneBsnAst,
     sync_to_ast, sync_hierarchy_to_ast, add_component_to_ast, remove_component_from_ast,
     set_bsn_field,
 };
@@ -135,12 +135,90 @@ fn set_bsn_field_on_entity(
     let registry = world.resource::<AppTypeRegistry>().clone();
     let reg = registry.read();
 
+    // 1. Update the BSN AST (source of truth)
     let mut ast = world.resource_mut::<SceneBsnAst>();
-    set_bsn_field(&mut ast, patches_entity, type_path, field_path, value, &reg);
-    drop(reg);
+    set_bsn_field(&mut ast, patches_entity, type_path, field_path, value.clone(), &reg);
     drop(ast);
 
-    world.entity_mut(entity).insert(AstDirty);
+    // 2. Apply via BSN template patch (Bevy's Scene system)
+    let Some(registration) = reg.get_with_type_path(type_path) else {
+        drop(reg);
+        return;
+    };
+    let template_type_id = registration.type_id();
+    let field_path_owned = field_path.to_string();
+    drop(reg);
+
+    let scene = bevy::scene2::dynamic_bsn::ErasedTemplatePatch {
+        template_type_id,
+        app_type_registry: registry.clone(),
+        fun: move |reflect: &mut dyn bevy::reflect::PartialReflect, _context: &mut bevy::scene2::ResolveContext| {
+            let reg = registry.read();
+            let asset_server = None::<&bevy::asset::AssetServer>;
+            if let Some(field_tid) = get_field_type_id(reflect, &field_path_owned) {
+                if let Some(reflected) = jackdaw_bsn::bsn_value_to_reflect(
+                    &value, field_tid, &reg, asset_server,
+                ) {
+                    if field_path_owned.is_empty() {
+                        reflect.apply(&*reflected);
+                    } else {
+                        // Navigate to the field via struct reflection
+                        apply_to_field_path(reflect, &field_path_owned, &*reflected);
+                    }
+                }
+            }
+        },
+    };
+
+    let asset_server = world.resource::<bevy::asset::AssetServer>().clone();
+    let mut patch = bevy::scene2::ScenePatch::load(&asset_server, scene);
+    if patch.resolve(&asset_server, &world.resource::<bevy::asset::Assets<bevy::scene2::ScenePatch>>()).is_ok() {
+        let _ = patch.apply(&mut world.entity_mut(entity));
+    }
+}
+
+fn get_field_type_id(reflect: &dyn bevy::reflect::PartialReflect, field_path: &str) -> Option<std::any::TypeId> {
+    use bevy::reflect::ReflectRef;
+    if field_path.is_empty() {
+        return reflect.get_represented_type_info().map(|i| i.type_id());
+    }
+    // Navigate the field path manually through struct fields
+    let parts: Vec<&str> = field_path.split('.').collect();
+    let mut current: &dyn bevy::reflect::PartialReflect = reflect;
+    for part in &parts {
+        match current.reflect_ref() {
+            ReflectRef::Struct(s) => {
+                current = s.field(part)?;
+            }
+            _ => return None,
+        }
+    }
+    current.get_represented_type_info().map(|i| i.type_id())
+}
+
+fn apply_to_field_path(
+    reflect: &mut dyn bevy::reflect::PartialReflect,
+    field_path: &str,
+    value: &dyn bevy::reflect::PartialReflect,
+) {
+    use bevy::reflect::ReflectMut;
+    let parts: Vec<&str> = field_path.split('.').collect();
+    let mut current: &mut dyn bevy::reflect::PartialReflect = reflect;
+    for (i, part) in parts.iter().enumerate() {
+        if i == parts.len() - 1 {
+            // Last segment — apply the value
+            if let ReflectMut::Struct(s) = current.reflect_mut() {
+                if let Some(field) = s.field_mut(part) {
+                    field.apply(value);
+                }
+            }
+        } else {
+            // Intermediate segment — navigate into
+            let ReflectMut::Struct(s) = current.reflect_mut() else { return };
+            let Some(next) = s.field_mut(part) else { return };
+            current = next;
+        }
+    }
 }
 
 /// AST-first name edit: updates the `BsnPatch::Name` directly (Name is a
@@ -168,26 +246,27 @@ impl EditorCommand for SetBsnName {
 fn set_bsn_name_on_entity(world: &mut World, entity: Entity, name: &str) {
     let patches_entity = jackdaw_bsn::ensure_ast_node(world, entity);
 
+    // 1. Update BSN AST
     let mut ast = world.resource_mut::<SceneBsnAst>();
-    // Find existing Name patch and update it, or create one
     if let Some(patches) = ast.get_patches(patches_entity) {
         let patch_ids: Vec<Entity> = patches.0.clone();
         for pe in patch_ids {
             if let Some(jackdaw_bsn::BsnPatch::Name(_)) = ast.get_patch(pe) {
                 ast.set_patch(pe, jackdaw_bsn::BsnPatch::Name(name.to_string()));
                 drop(ast);
-                world.entity_mut(entity).insert(AstDirty);
+                // 2. Also update ECS Name directly
+                world.entity_mut(entity).insert(Name::new(name.to_string()));
                 return;
             }
         }
     }
-    // No existing Name patch — create one
     let patch_entity = ast.world.spawn(jackdaw_bsn::BsnPatch::Name(name.to_string())).id();
     if let Some(patches) = ast.get_patches_mut(patches_entity) {
-        patches.0.insert(0, patch_entity); // Name goes first
+        patches.0.insert(0, patch_entity);
     }
     drop(ast);
-    world.entity_mut(entity).insert(AstDirty);
+    // 2. Also update ECS Name directly
+    world.entity_mut(entity).insert(Name::new(name.to_string()));
 }
 
 pub struct SetTransform {
@@ -198,22 +277,45 @@ pub struct SetTransform {
 
 impl EditorCommand for SetTransform {
     fn execute(&mut self, world: &mut World) {
-        if let Some(mut transform) = world.get_mut::<Transform>(self.entity) {
-            *transform = self.new_transform;
-        }
-        sync_to_ast(world, self.entity, TypeId::of::<Transform>());
+        apply_component_bsn(world, self.entity, &self.new_transform);
     }
 
     fn undo(&mut self, world: &mut World) {
-        if let Some(mut transform) = world.get_mut::<Transform>(self.entity) {
-            *transform = self.old_transform;
-        }
-        sync_to_ast(world, self.entity, TypeId::of::<Transform>());
+        apply_component_bsn(world, self.entity, &self.old_transform);
     }
 
     fn description(&self) -> &str {
         "Set transform"
     }
+}
+
+pub fn apply_component_bsn<C: Component + bevy::reflect::Reflect + Clone>(
+    world: &mut World,
+    entity: Entity,
+    value: &C,
+) {
+    // 1. Update BSN AST (source of truth)
+    let patches_entity = jackdaw_bsn::ensure_ast_node(world, entity);
+    let registry = world.resource::<AppTypeRegistry>().clone();
+    let reg = registry.read();
+    let patch = jackdaw_bsn::component_to_bsn_patch(value.as_partial_reflect(), &reg);
+    let type_path = reg.get(TypeId::of::<C>())
+        .map(|r| r.type_info().type_path().to_string())
+        .unwrap_or_default();
+    let mut ast = world.resource_mut::<SceneBsnAst>();
+    if let Some(existing) = ast.find_patch_by_type_path(patches_entity, &type_path) {
+        ast.set_patch(existing, patch);
+    } else {
+        let pe = ast.world.spawn(patch).id();
+        if let Some(patches) = ast.get_patches_mut(patches_entity) {
+            patches.0.push(pe);
+        }
+    }
+    drop(ast);
+    drop(reg);
+
+    // 2. Apply to ECS (insert overwrites the component)
+    world.entity_mut(entity).insert(value.clone());
 }
 
 pub struct ReparentEntity {
