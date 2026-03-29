@@ -170,6 +170,7 @@ fn apply_struct_patch(world: &mut World, entity: Entity, data: &BsnStructData) {
     }
 
     // Enum variant lookup: type_path is "EnumType::Variant" with struct fields
+    info!("apply_struct_patch: no direct registration for '{}', trying enum variant", data.type_path);
     if let Some(last_sep) = data.type_path.rfind("::") {
         let enum_path = &data.type_path[..last_sep];
         let variant_name = &data.type_path[last_sep + 2..];
@@ -186,16 +187,34 @@ fn apply_struct_patch(world: &mut World, entity: Entity, data: &BsnStructData) {
 
         let mut value = reflect_default.default();
         if let ReflectMut::Enum(e) = value.reflect_mut() {
-            // Build a DynamicStruct with the variant's fields
+            // Get variant field type info from the enum's type info,
+            // NOT from the default instance's current variant (which may differ).
+            let variant_field_types: std::collections::HashMap<String, std::any::TypeId> = e
+                .get_represented_type_info()
+                .and_then(|info| {
+                    if let bevy::reflect::TypeInfo::Enum(enum_info) = info {
+                        if let Some(bevy::reflect::enums::VariantInfo::Struct(struct_info)) = enum_info.variant(variant_name) {
+                            let mut map = std::collections::HashMap::new();
+                            for i in 0..struct_info.field_len() {
+                                let fi = struct_info.field_at(i).unwrap();
+                                map.insert(fi.name().to_string(), fi.type_id());
+                            }
+                            return Some(map);
+                        }
+                    }
+                    None
+                })
+                .unwrap_or_default();
+
             let mut dynamic_struct = bevy::reflect::structs::DynamicStruct::default();
             for field in &data.fields.0 {
+                let field_type_id = variant_field_types
+                    .get(&field.name)
+                    .copied()
+                    .unwrap_or(std::any::TypeId::of::<f32>());
                 if let Some(reflected) = bsn_value_to_reflect(
                     &field.value,
-                    // We don't know the exact field type, so use the existing variant's field type
-                    e.field(&field.name)
-                        .and_then(|f| f.get_represented_type_info())
-                        .map(|info| info.type_id())
-                        .unwrap_or(std::any::TypeId::of::<f32>()),
+                    field_type_id,
                     &reg,
                     asset_server.as_ref(),
                 ) {

@@ -19,7 +19,8 @@ use crate::{AstNodeRef, SceneBsnAst, component_to_bsn_patch};
 pub fn sync_to_ast(world: &mut World, entity: Entity, component_type_id: TypeId) {
     // Get the AST node reference
     let Some(ast_ref) = world.get::<AstNodeRef>(entity) else {
-        return; // Entity not tracked by BSN
+        bevy::log::warn!("sync_to_ast: entity {entity:?} has no AstNodeRef");
+        return;
     };
     let patches_entity = ast_ref.patches_entity;
 
@@ -28,12 +29,15 @@ pub fn sync_to_ast(world: &mut World, entity: Entity, component_type_id: TypeId)
     let registry = registry.read();
 
     let Some(registration) = registry.get(component_type_id) else {
+        bevy::log::warn!("sync_to_ast: no registration for type");
         return;
     };
     let Some(reflect_component) = registration.data::<ReflectComponent>() else {
+        bevy::log::warn!("sync_to_ast: no ReflectComponent");
         return;
     };
     let Some(reflected) = reflect_component.reflect(world.entity(entity)) else {
+        bevy::log::warn!("sync_to_ast: component not found on entity {entity:?}");
         return;
     };
 
@@ -45,6 +49,15 @@ pub fn sync_to_ast(world: &mut World, entity: Entity, component_type_id: TypeId)
         .map(|info| info.type_path().to_string())
         .unwrap_or_default();
 
+    // Log the patch type for debugging enum issues
+    let patch_desc = match &patch {
+        crate::BsnPatch::Type(tp) => format!("Type({})", tp),
+        crate::BsnPatch::Struct(d) => format!("Struct({}, {} fields)", d.type_path, d.fields.0.len()),
+        crate::BsnPatch::TupleStruct(d) => format!("TupleStruct({})", d.type_path),
+        _ => "other".to_string(),
+    };
+    bevy::log::info!("sync_to_ast: entity {entity:?}, type_path={type_path}, patch={patch_desc}");
+
     drop(registry);
 
     // Update the AST
@@ -52,9 +65,10 @@ pub fn sync_to_ast(world: &mut World, entity: Entity, component_type_id: TypeId)
 
     // Find or create the patch for this type
     if let Some(existing) = ast.find_patch_by_type_path(patches_entity, &type_path) {
+        bevy::log::info!("  replacing existing patch");
         ast.set_patch(existing, patch);
     } else {
-        // Need to spawn first, then add to patches list (avoids double borrow)
+        bevy::log::info!("  creating new patch (no existing found)");
         let patch_entity = ast.world.spawn(patch).id();
         if let Some(patches) = ast.get_patches_mut(patches_entity) {
             patches.0.push(patch_entity);
