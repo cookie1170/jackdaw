@@ -72,41 +72,10 @@ fn set_bsn_field_on_entity(
     set_bsn_field(&mut ast, patches_entity, type_path, field_path, value.clone(), &reg);
     drop(ast);
 
-    // 2. Apply via BSN template patch (Bevy's Scene system)
-    let Some(registration) = reg.get_with_type_path(type_path) else {
-        drop(reg);
-        return;
-    };
-    let template_type_id = registration.type_id();
-    let field_path_owned = field_path.to_string();
     drop(reg);
 
-    let scene = bevy::scene2::dynamic_bsn::ErasedTemplatePatch {
-        template_type_id,
-        app_type_registry: registry.clone(),
-        fun: move |reflect: &mut dyn bevy::reflect::PartialReflect, _context: &mut bevy::scene2::ResolveContext| {
-            let reg = registry.read();
-            let asset_server = None::<&bevy::asset::AssetServer>;
-            if let Some(field_tid) = get_field_type_id(reflect, &field_path_owned) {
-                if let Some(reflected) = jackdaw_bsn::bsn_value_to_reflect(
-                    &value, field_tid, &reg, asset_server,
-                ) {
-                    if field_path_owned.is_empty() {
-                        reflect.apply(&*reflected);
-                    } else {
-                        // Navigate to the field via struct reflection
-                        apply_to_field_path(reflect, &field_path_owned, &*reflected);
-                    }
-                }
-            }
-        },
-    };
-
-    let asset_server = world.resource::<bevy::asset::AssetServer>().clone();
-    let mut patch = bevy::scene2::ScenePatch::load(&asset_server, scene);
-    if patch.resolve(&asset_server, &world.resource::<bevy::asset::Assets<bevy::scene2::ScenePatch>>()).is_ok() {
-        let _ = patch.apply(&mut world.entity_mut(entity));
-    }
+    // 2. Apply BSN → ECS for this entity
+    jackdaw_bsn::apply_ast_to_ecs(world, entity);
 }
 
 fn get_field_type_id(reflect: &dyn bevy::reflect::PartialReflect, field_path: &str) -> Option<std::any::TypeId> {
@@ -114,13 +83,15 @@ fn get_field_type_id(reflect: &dyn bevy::reflect::PartialReflect, field_path: &s
     if field_path.is_empty() {
         return reflect.get_represented_type_info().map(|i| i.type_id());
     }
-    // Navigate the field path manually through struct fields
     let parts: Vec<&str> = field_path.split('.').collect();
     let mut current: &dyn bevy::reflect::PartialReflect = reflect;
     for part in &parts {
         match current.reflect_ref() {
             ReflectRef::Struct(s) => {
                 current = s.field(part)?;
+            }
+            ReflectRef::Enum(e) => {
+                current = e.field(part)?;
             }
             _ => return None,
         }
@@ -139,16 +110,32 @@ fn apply_to_field_path(
     for (i, part) in parts.iter().enumerate() {
         if i == parts.len() - 1 {
             // Last segment — apply the value
-            if let ReflectMut::Struct(s) = current.reflect_mut() {
-                if let Some(field) = s.field_mut(part) {
-                    field.apply(value);
+            match current.reflect_mut() {
+                ReflectMut::Struct(s) => {
+                    if let Some(field) = s.field_mut(part) {
+                        field.apply(value);
+                    }
                 }
+                ReflectMut::Enum(e) => {
+                    if let Some(field) = e.field_mut(part) {
+                        field.apply(value);
+                    }
+                }
+                _ => {}
             }
         } else {
             // Intermediate segment — navigate into
-            let ReflectMut::Struct(s) = current.reflect_mut() else { return };
-            let Some(next) = s.field_mut(part) else { return };
-            current = next;
+            match current.reflect_mut() {
+                ReflectMut::Struct(s) => {
+                    let Some(next) = s.field_mut(part) else { return };
+                    current = next;
+                }
+                ReflectMut::Enum(e) => {
+                    let Some(next) = e.field_mut(part) else { return };
+                    current = next;
+                }
+                _ => return,
+            }
         }
     }
 }

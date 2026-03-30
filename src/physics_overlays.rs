@@ -67,11 +67,11 @@ fn draw_collider_gizmos(
         &InheritedVisibility,
         Option<&Sensor>,
         Option<&Mesh3d>,
+        Option<&crate::brush::BrushMeshCache>,
     )>,
     selected_bodies: Query<Entity, (With<RigidBody>, With<Selected>)>,
     children_query: Query<&Children>,
     collider_check: Query<(), With<ColliderConstructor>>,
-    mesh3d_query: Query<&Mesh3d>,
     meshes: Res<Assets<Mesh>>,
 ) {
     if !config.show_colliders {
@@ -92,7 +92,7 @@ fn draw_collider_gizmos(
         }
     }
 
-    for (entity, constructor, tf, vis, sensor, mesh3d) in &colliders {
+    for (entity, constructor, tf, vis, sensor, mesh3d, brush_cache) in &colliders {
         if !vis.get() {
             continue;
         }
@@ -110,17 +110,38 @@ fn draw_collider_gizmos(
         let rot = transform.rotation;
 
         // Try to compute the actual Collider shape from the constructor.
-        // For mesh-based variants, look for Mesh3d on self or children.
-        let mesh: Option<&Mesh> = mesh3d
-            .and_then(|m| meshes.get(&m.0))
-            .or_else(|| {
-                // Brush entities have Mesh3d on child face entities
-                children_query.get(entity).ok().and_then(|children| {
-                    children.iter().find_map(|child| {
-                        mesh3d_query.get(child).ok().and_then(|m| meshes.get(&m.0))
-                    })
-                })
-            });
+        // For mesh-based variants, use BrushMeshCache (combined geometry) or Mesh3d.
+        let self_mesh = mesh3d.and_then(|m| meshes.get(&m.0));
+        let brush_mesh_storage;
+
+        let mesh: Option<&Mesh> = if self_mesh.is_some() {
+            self_mesh
+        } else if constructor.requires_mesh() {
+            if let Some(cache) = brush_cache {
+                // Build a triangulated mesh from BrushMeshCache
+                let positions: Vec<[f32; 3]> = cache.vertices.iter().map(|v| [v.x, v.y, v.z]).collect();
+                let mut indices: Vec<u32> = Vec::new();
+                for polygon in &cache.face_polygons {
+                    // Fan-triangulate each polygon
+                    if polygon.len() >= 3 {
+                        for i in 1..polygon.len() - 1 {
+                            indices.push(polygon[0] as u32);
+                            indices.push(polygon[i] as u32);
+                            indices.push(polygon[i + 1] as u32);
+                        }
+                    }
+                }
+                let mut m = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default());
+                m.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+                m.insert_indices(bevy::mesh::Indices::U32(indices));
+                brush_mesh_storage = Some(m);
+                brush_mesh_storage.as_ref()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let collider = Collider::try_from_constructor(constructor.clone(), mesh);
 

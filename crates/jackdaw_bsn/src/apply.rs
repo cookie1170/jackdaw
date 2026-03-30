@@ -33,6 +33,9 @@ pub fn apply_dirty_ast_patches(world: &mut World) {
         .iter(world)
         .collect();
 
+    for entity in &dirty {
+        info!("apply_dirty_ast_patches: applying to entity {entity:?}");
+    }
     for entity in dirty {
         apply_ast_to_ecs(world, entity);
         if let Ok(mut ec) = world.get_entity_mut(entity) {
@@ -542,9 +545,10 @@ pub fn set_bsn_field(
     value: BsnValue,
     registry: &TypeRegistry,
 ) {
+    info!("set_bsn_field: type_path={type_path}, field_path={field_path}");
     // Ensure a Struct patch exists for this type.
     let patch_entity = match ast.find_patch_by_type_path(patches_entity, type_path) {
-        Some(pe) => pe,
+        Some(pe) => { info!("  found existing patch"); pe }
         None => {
             let pe = ast
                 .world
