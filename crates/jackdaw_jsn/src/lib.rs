@@ -1,3 +1,4 @@
+pub mod ast;
 pub mod format;
 mod loader;
 pub mod mesh_rebuild;
@@ -14,6 +15,7 @@ pub use types::{
 // Re-export geometry crate
 pub use jackdaw_geometry;
 
+pub use ast::SceneJsnAst;
 pub use format::{JsnProject, JsnProjectConfig, JsnScene};
 pub use loader::JsnAssetLoader;
 

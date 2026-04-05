@@ -38,6 +38,7 @@ ehttp.workspace = true
 bincode.workspace = true
 base64.workspace = true
 anyhow.workspace = true
+arboard = { version = "3", features = ["wayland-data-control"] }
 dirs.workspace = true
 regex.workspace = true
 pathdiff.workspace = true

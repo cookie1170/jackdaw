@@ -1,13 +1,12 @@
-use crate::commands::{CommandGroup, CommandHistory, EditorCommand, SetComponentField};
+use crate::commands::{CommandGroup, CommandHistory, EditorCommand, SetJsnField};
 use crate::selection::Selection;
-use std::any::TypeId;
 
 use bevy::{
     ecs::reflect::{AppTypeRegistry, ReflectComponent},
     feathers::theme::ThemedText,
     input_focus::InputFocus,
     prelude::*,
-    reflect::{DynamicEnum, DynamicStruct, DynamicTuple, DynamicVariant, ReflectRef},
+    reflect::ReflectRef,
     ui_widgets::observe,
 };
 use jackdaw_feathers::{
@@ -33,7 +32,7 @@ pub(crate) fn spawn_reflected_fields(
     depth: usize,
     base_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     entity_names: &Query<&Name>,
     type_registry: &AppTypeRegistry,
     editor_font: &Handle<Font>,
@@ -61,7 +60,7 @@ pub(crate) fn spawn_reflected_fields(
                     depth,
                     child_path,
                     source_entity,
-                    component_type_id,
+                    type_path,
                     entity_names,
                     type_registry,
                     editor_font,
@@ -87,7 +86,7 @@ pub(crate) fn spawn_reflected_fields(
                     depth,
                     child_path,
                     source_entity,
-                    component_type_id,
+                    type_path,
                     entity_names,
                     type_registry,
                     editor_font,
@@ -103,7 +102,7 @@ pub(crate) fn spawn_reflected_fields(
                 depth,
                 base_path,
                 source_entity,
-                component_type_id,
+                type_path,
                 entity_names,
                 type_registry,
                 editor_font,
@@ -119,7 +118,7 @@ pub(crate) fn spawn_reflected_fields(
                 depth,
                 &base_path,
                 source_entity,
-                component_type_id,
+                type_path,
                 entity_names,
             );
         }
@@ -132,7 +131,7 @@ pub(crate) fn spawn_reflected_fields(
                 depth,
                 &base_path,
                 source_entity,
-                component_type_id,
+                type_path,
                 entity_names,
             );
         }
@@ -163,7 +162,7 @@ pub(crate) fn spawn_reflected_fields(
                         depth + 1,
                         child_path,
                         source_entity,
-                        component_type_id,
+                        type_path,
                         entity_names,
                         type_registry,
                         editor_font,
@@ -212,7 +211,7 @@ pub(crate) fn spawn_reflected_fields(
                     depth,
                     child_path,
                     source_entity,
-                    component_type_id,
+                    type_path,
                     entity_names,
                     type_registry,
                     editor_font,
@@ -257,7 +256,7 @@ fn spawn_field_row(
     depth: usize,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     entity_names: &Query<&Name>,
     type_registry: &AppTypeRegistry,
     editor_font: &Handle<Font>,
@@ -327,7 +326,7 @@ fn spawn_field_row(
                         depth + 1,
                         child_path,
                         source_entity,
-                        component_type_id,
+                        type_path,
                         entity_names,
                     );
                 }
@@ -361,7 +360,7 @@ fn spawn_field_row(
                         depth + 1,
                         child_path,
                         source_entity,
-                        component_type_id,
+                        type_path,
                         entity_names,
                     );
                 }
@@ -396,7 +395,7 @@ fn spawn_field_row(
                     depth + 1,
                     child_path,
                     source_entity,
-                    component_type_id,
+                    type_path,
                     entity_names,
                     type_registry,
                     editor_font,
@@ -439,7 +438,7 @@ fn spawn_field_row(
             vec3,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -454,7 +453,7 @@ fn spawn_field_row(
             vec2,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -469,7 +468,7 @@ fn spawn_field_row(
             *color,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -484,7 +483,7 @@ fn spawn_field_row(
             bool_val,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
             editor_font,
             icon_font,
@@ -501,7 +500,7 @@ fn spawn_field_row(
             v as f64,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -514,7 +513,7 @@ fn spawn_field_row(
             v,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -529,7 +528,7 @@ fn spawn_field_row(
             v as f64,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -542,7 +541,7 @@ fn spawn_field_row(
             v as f64,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -555,7 +554,7 @@ fn spawn_field_row(
             v as f64,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -568,7 +567,7 @@ fn spawn_field_row(
             v as f64,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -581,7 +580,7 @@ fn spawn_field_row(
             v as f64,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -594,7 +593,7 @@ fn spawn_field_row(
             v as f64,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -607,7 +606,7 @@ fn spawn_field_row(
             v as f64,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -620,7 +619,7 @@ fn spawn_field_row(
             v as f64,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -633,7 +632,7 @@ fn spawn_field_row(
             v as f64,
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
             depth,
         );
         return;
@@ -649,7 +648,7 @@ fn spawn_field_row(
                 depth,
                 field_path,
                 source_entity,
-                component_type_id,
+                type_path,
                 entity_names,
                 type_registry,
                 editor_font,
@@ -684,7 +683,7 @@ fn spawn_field_row(
                 &format_partial_reflect_value(value),
                 field_path,
                 source_entity,
-                component_type_id,
+                type_path,
                 depth,
             );
         } else {
@@ -722,7 +721,7 @@ fn spawn_field_row(
                         depth + 1,
                         child_path,
                         source_entity,
-                        component_type_id,
+                        type_path,
                         entity_names,
                         type_registry,
                         editor_font,
@@ -744,7 +743,7 @@ fn spawn_field_row(
                         depth + 1,
                         child_path,
                         source_entity,
-                        component_type_id,
+                        type_path,
                         entity_names,
                         type_registry,
                         editor_font,
@@ -766,7 +765,7 @@ fn spawn_field_row(
                         depth + 1,
                         child_path,
                         source_entity,
-                        component_type_id,
+                        type_path,
                         entity_names,
                         type_registry,
                         editor_font,
@@ -786,7 +785,7 @@ fn spawn_vec3_row(
     vec3: &Vec3,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     depth: usize,
 ) {
     let left_padding = depth as f32 * tokens::SPACING_MD;
@@ -828,7 +827,7 @@ fn spawn_vec3_row(
         colors::INSPECTOR_AXIS_X,
         format!("{field_path}.x"),
         source_entity,
-        component_type_id,
+        type_path,
     );
     spawn_axis_input(
         commands,
@@ -838,7 +837,7 @@ fn spawn_vec3_row(
         colors::INSPECTOR_AXIS_Y,
         format!("{field_path}.y"),
         source_entity,
-        component_type_id,
+        type_path,
     );
     spawn_axis_input(
         commands,
@@ -848,7 +847,7 @@ fn spawn_vec3_row(
         colors::INSPECTOR_AXIS_Z,
         format!("{field_path}.z"),
         source_entity,
-        component_type_id,
+        type_path,
     );
 }
 
@@ -859,7 +858,7 @@ fn spawn_vec2_row(
     vec2: &Vec2,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     depth: usize,
 ) {
     let left_padding = depth as f32 * tokens::SPACING_MD;
@@ -900,7 +899,7 @@ fn spawn_vec2_row(
         colors::INSPECTOR_AXIS_X,
         format!("{field_path}.x"),
         source_entity,
-        component_type_id,
+        type_path,
     );
     spawn_axis_input(
         commands,
@@ -910,7 +909,7 @@ fn spawn_vec2_row(
         colors::INSPECTOR_AXIS_Y,
         format!("{field_path}.y"),
         source_entity,
-        component_type_id,
+        type_path,
     );
 }
 
@@ -922,7 +921,7 @@ fn spawn_axis_input(
     label_color: Color,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
 ) {
     // Axis label
     commands.spawn((
@@ -949,7 +948,7 @@ fn spawn_axis_input(
         ),
         FieldBinding {
             source_entity,
-            component_type_id,
+            type_path: type_path.to_string(),
             field_path,
         },
         ChildOf(parent),
@@ -963,7 +962,7 @@ fn spawn_bool_toggle(
     value: bool,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     depth: usize,
     editor_font: &Handle<Font>,
     icon_font: &Handle<Font>,
@@ -1006,7 +1005,7 @@ fn spawn_bool_toggle(
         ),
         FieldBinding {
             source_entity,
-            component_type_id,
+            type_path: type_path.to_string(),
             field_path,
         },
         ChildOf(row),
@@ -1020,7 +1019,7 @@ fn spawn_color_field(
     color: Color,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     depth: usize,
 ) {
     let left_padding = depth as f32 * tokens::SPACING_MD;
@@ -1056,12 +1055,13 @@ fn spawn_color_field(
     let rgba = [srgba.red, srgba.green, srgba.blue, srgba.alpha];
 
     let path = field_path.clone();
+    let tp = type_path.to_string();
     commands
         .spawn((
             color_picker(ColorPickerProps::new().with_color(rgba)),
             FieldBinding {
                 source_entity,
-                component_type_id,
+                type_path: type_path.to_string(),
                 field_path,
             },
             ChildOf(row),
@@ -1070,8 +1070,9 @@ fn spawn_color_field(
             move |event: On<ColorPickerCommitEvent>, mut commands: Commands| {
                 let color = event.color;
                 let path = path.clone();
+                let tp = tp.clone();
                 commands.queue(move |world: &mut World| {
-                    apply_color_with_undo(world, source_entity, component_type_id, &path, color);
+                    apply_color_with_undo(world, source_entity, &tp, &path, color);
                 });
             },
         );
@@ -1081,7 +1082,7 @@ fn spawn_color_field(
 fn apply_color_with_undo(
     world: &mut World,
     _entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     field_path: &str,
     new_rgba: [f32; 4],
 ) {
@@ -1090,36 +1091,24 @@ fn apply_color_with_undo(
     let selection = world.resource::<Selection>();
     let targets: Vec<Entity> = selection.entities.clone();
 
-    let new_color = Color::srgba(new_rgba[0], new_rgba[1], new_rgba[2], new_rgba[3]);
+    let new_json = serde_json::to_value(new_rgba).unwrap_or_default();
 
     let reg = registry.read();
-    let Some(registration) = reg.get(component_type_id) else {
-        return;
-    };
-    let Some(reflect_component) = registration.data::<ReflectComponent>() else {
-        return;
-    };
-
     let mut sub_commands: Vec<Box<dyn EditorCommand>> = Vec::new();
 
     for &target in &targets {
-        let Ok(entity_ref) = world.get_entity(target) else {
-            continue;
-        };
-        let Some(reflected) = reflect_component.reflect(entity_ref) else {
-            continue;
-        };
-        let Ok(field) = reflected.reflect_path(field_path) else {
-            continue;
-        };
-        let old_value = field.to_dynamic();
+        let old_json = world
+            .resource::<jackdaw_jsn::SceneJsnAst>()
+            .get_component_field(target, type_path, field_path, &reg)
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
 
-        sub_commands.push(Box::new(SetComponentField {
+        sub_commands.push(Box::new(SetJsnField {
             entity: target,
-            component_type_id,
+            type_path: type_path.to_string(),
             field_path: field_path.to_string(),
-            old_value,
-            new_value: Box::new(new_color),
+            old_value: old_json,
+            new_value: new_json.clone(),
         }));
     }
     drop(reg);
@@ -1149,7 +1138,7 @@ fn spawn_numeric_field(
     value: f64,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     depth: usize,
 ) {
     let left_padding = depth as f32 * tokens::SPACING_MD;
@@ -1190,7 +1179,7 @@ fn spawn_numeric_field(
         ),
         FieldBinding {
             source_entity,
-            component_type_id,
+            type_path: type_path.to_string(),
             field_path,
         },
         ChildOf(row),
@@ -1204,7 +1193,7 @@ fn spawn_editable_field(
     current_value: &str,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     depth: usize,
 ) {
     let left_padding = depth as f32 * tokens::SPACING_MD;
@@ -1246,7 +1235,7 @@ fn spawn_editable_field(
         ),
         FieldBinding {
             source_entity,
-            component_type_id,
+            type_path: type_path.to_string(),
             field_path,
         },
         ChildOf(row),
@@ -1258,7 +1247,7 @@ fn spawn_editable_field(
 fn apply_field_value_with_undo(
     world: &mut World,
     _entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     field_path: &str,
     new_value_str: &str,
 ) {
@@ -1268,39 +1257,24 @@ fn apply_field_value_with_undo(
     let selection = world.resource::<Selection>();
     let targets: Vec<Entity> = selection.entities.clone();
 
-    let mut sub_commands: Vec<Box<dyn EditorCommand>> = Vec::new();
+    let new_json = parse_to_json_value(new_value_str);
 
     let reg = registry.read();
-    let Some(reflect_component) = reg
-        .get(component_type_id)
-        .and_then(|r| r.data::<ReflectComponent>())
-    else {
-        return;
-    };
+    let mut sub_commands: Vec<Box<dyn EditorCommand>> = Vec::new();
 
     for &target in &targets {
-        let Ok(entity_ref) = world.get_entity(target) else {
-            continue;
-        };
-        let Some(reflected) = reflect_component.reflect(entity_ref) else {
-            continue;
-        };
-        let Ok(field) = reflected.reflect_path(field_path) else {
-            continue;
-        };
-        let old_value = field.to_dynamic();
+        let old_json = world
+            .resource::<jackdaw_jsn::SceneJsnAst>()
+            .get_component_field(target, type_path, field_path, &reg)
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
 
-        let mut new_val = old_value.to_dynamic();
-        if !parse_into_reflect(&mut *new_val, new_value_str) {
-            continue;
-        }
-
-        sub_commands.push(Box::new(SetComponentField {
+        sub_commands.push(Box::new(SetJsnField {
             entity: target,
-            component_type_id,
+            type_path: type_path.to_string(),
             field_path: field_path.to_string(),
-            old_value,
-            new_value: new_val,
+            old_value: old_json,
+            new_value: new_json.clone(),
         }));
     }
     drop(reg);
@@ -1323,75 +1297,18 @@ fn apply_field_value_with_undo(
     history.redo_stack.clear();
 }
 
-/// Parse a string value into a reflected value, returning true on success.
-fn parse_into_reflect(target: &mut dyn PartialReflect, value_str: &str) -> bool {
-    if let Some(current) = target.try_downcast_mut::<f32>() {
-        if let Ok(v) = value_str.parse::<f32>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<f64>() {
-        if let Ok(v) = value_str.parse::<f64>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<i32>() {
-        if let Ok(v) = value_str.parse::<i32>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<u32>() {
-        if let Ok(v) = value_str.parse::<u32>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<usize>() {
-        if let Ok(v) = value_str.parse::<usize>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<i8>() {
-        if let Ok(v) = value_str.parse::<i8>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<i16>() {
-        if let Ok(v) = value_str.parse::<i16>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<i64>() {
-        if let Ok(v) = value_str.parse::<i64>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<u8>() {
-        if let Ok(v) = value_str.parse::<u8>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<u16>() {
-        if let Ok(v) = value_str.parse::<u16>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<u64>() {
-        if let Ok(v) = value_str.parse::<u64>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<bool>() {
-        if let Ok(v) = value_str.parse::<bool>() {
-            *current = v;
-            return true;
-        }
-    } else if let Some(current) = target.try_downcast_mut::<String>() {
-        *current = value_str.to_string();
-        return true;
+/// Parse a text field string to the most appropriate JSON value.
+fn parse_to_json_value(s: &str) -> serde_json::Value {
+    if let Ok(v) = s.parse::<f64>() {
+        serde_json::json!(v)
+    } else if let Ok(v) = s.parse::<bool>() {
+        serde_json::json!(v)
+    } else {
+        serde_json::Value::String(s.to_string())
     }
-    false
 }
 
+/// Parse a string value into a reflected value, returning true on success.
 fn spawn_entity_link(commands: &mut Commands, parent: Entity, target: Entity, label: &str) {
     commands.spawn((
         Text::new(label),
@@ -1431,7 +1348,7 @@ fn spawn_list_expansion<'a>(
     depth: usize,
     base_path: &str,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     entity_names: &Query<&Name>,
 ) {
     spawn_text_row(commands, parent, &format!("[{len} items]"), depth);
@@ -1456,7 +1373,7 @@ fn spawn_list_expansion<'a>(
                 depth + 1,
                 child_path,
                 source_entity,
-                component_type_id,
+                type_path,
                 entity_names,
             );
         }
@@ -1470,7 +1387,7 @@ fn spawn_list_item_value(
     depth: usize,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     entity_names: &Query<&Name>,
 ) {
     // Entity -> clickable link
@@ -1490,7 +1407,7 @@ fn spawn_list_item_value(
             &format_partial_reflect_value(value),
             field_path,
             source_entity,
-            component_type_id,
+            type_path,
         );
         return;
     }
@@ -1516,7 +1433,7 @@ fn spawn_inline_editable(
     current_value: &str,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
 ) {
     commands.spawn((
         text_edit::text_edit(
@@ -1527,7 +1444,7 @@ fn spawn_inline_editable(
         ),
         FieldBinding {
             source_entity,
-            component_type_id,
+            type_path: type_path.to_string(),
             field_path,
         },
         ChildOf(parent),
@@ -1626,7 +1543,7 @@ pub(crate) fn on_text_edit_commit(
         if let Ok((binding, variant)) = bindings.get(child_of.parent()) {
             found = Some((
                 binding.source_entity,
-                binding.component_type_id,
+                binding.type_path.clone(),
                 binding.field_path.clone(),
                 variant.copied(),
             ));
@@ -1635,7 +1552,7 @@ pub(crate) fn on_text_edit_commit(
         current = child_of.parent();
     }
 
-    let Some((source_entity, component_type_id, path, variant)) = found else {
+    let Some((source_entity, tp, path, variant)) = found else {
         return;
     };
 
@@ -1655,7 +1572,7 @@ pub(crate) fn on_text_edit_commit(
     };
 
     commands.queue(move |world: &mut World| {
-        apply_field_value_with_undo(world, source_entity, component_type_id, &path, &value_str);
+        apply_field_value_with_undo(world, source_entity, &tp, &path, &value_str);
     });
 }
 
@@ -1674,11 +1591,11 @@ pub(crate) fn on_checkbox_commit(
     if remote_proxies.contains(source) {
         return;
     }
-    let type_id = binding.component_type_id;
+    let tp = binding.type_path.clone();
     let path = binding.field_path.clone();
     let val = format!("{}", event.checked);
     commands.queue(move |world: &mut World| {
-        apply_field_value_with_undo(world, source, type_id, &path, &val);
+        apply_field_value_with_undo(world, source, &tp, &path, &val);
     });
 }
 
@@ -1694,13 +1611,13 @@ pub(crate) fn refresh_inspector_fields(world: &mut World) {
     let registry = type_registry.read();
 
     // Collect numeric binding info: outer entity + current TextEditValue
-    let mut numeric_lookups: Vec<(Entity, TypeId, String, String)> = Vec::new();
+    let mut numeric_lookups: Vec<(Entity, String, String, String)> = Vec::new();
     let mut query = world.query::<(Entity, &FieldBinding, &TextEditValue, &TextEditConfig)>();
     for (entity, binding, value, config) in query.iter(world) {
         if binding.source_entity == primary && config.variant.is_numeric() {
             numeric_lookups.push((
                 entity,
-                binding.component_type_id,
+                binding.type_path.clone(),
                 binding.field_path.clone(),
                 value.0.clone(),
             ));
@@ -1708,13 +1625,13 @@ pub(crate) fn refresh_inspector_fields(world: &mut World) {
     }
 
     // Collect checkbox binding info and current state
-    let mut bool_lookups: Vec<(Entity, TypeId, String, bool)> = Vec::new();
+    let mut bool_lookups: Vec<(Entity, String, String, bool)> = Vec::new();
     let mut checkbox_query = world.query::<(Entity, &FieldBinding, &CheckboxState)>();
     for (entity, binding, state) in checkbox_query.iter(world) {
         if binding.source_entity == primary {
             bool_lookups.push((
                 entity,
-                binding.component_type_id,
+                binding.type_path.clone(),
                 binding.field_path.clone(),
                 state.checked,
             ));
@@ -1733,8 +1650,8 @@ pub(crate) fn refresh_inspector_fields(world: &mut World) {
         return;
     };
 
-    for (ui_entity, comp_type_id, field_path, current_text) in &numeric_lookups {
-        let Some(registration) = registry.get(*comp_type_id) else {
+    for (ui_entity, comp_type_path, field_path, current_text) in &numeric_lookups {
+        let Some(registration) = registry.get_with_type_path(comp_type_path) else {
             continue;
         };
         let Some(reflect_component) = registration.data::<ReflectComponent>() else {
@@ -1757,8 +1674,8 @@ pub(crate) fn refresh_inspector_fields(world: &mut World) {
         }
     }
 
-    for (ui_entity, comp_type_id, field_path, current_checked) in &bool_lookups {
-        let Some(registration) = registry.get(*comp_type_id) else {
+    for (ui_entity, comp_type_path, field_path, current_checked) in &bool_lookups {
+        let Some(registration) = registry.get_with_type_path(comp_type_path) else {
             continue;
         };
         let Some(reflect_component) = registration.data::<ReflectComponent>() else {
@@ -1878,7 +1795,7 @@ fn spawn_enum_field(
     depth: usize,
     field_path: String,
     source_entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     entity_names: &Query<&Name>,
     type_registry: &AppTypeRegistry,
     editor_font: &Handle<Font>,
@@ -1954,12 +1871,13 @@ fn spawn_enum_field(
             .id();
 
         let path = field_path.clone();
+        let tp = type_path.to_string();
         commands
             .spawn((
                 combobox_with_selected(variant_names, selected_index),
                 FieldBinding {
                     source_entity,
-                    component_type_id,
+                    type_path: type_path.to_string(),
                     field_path,
                 },
                 ChildOf(row),
@@ -1968,11 +1886,12 @@ fn spawn_enum_field(
                 move |event: On<ComboBoxChangeEvent>, mut commands: Commands| {
                     let variant_name = event.label.clone();
                     let path = path.clone();
+                    let tp = tp.clone();
                     commands.queue(move |world: &mut World| {
                         apply_enum_variant_with_undo(
                             world,
                             source_entity,
-                            component_type_id,
+                            &tp,
                             &path,
                             &variant_name,
                         );
@@ -1995,12 +1914,13 @@ fn spawn_enum_field(
             .id();
 
         let path = field_path.clone();
+        let tp = type_path.to_string();
         commands
             .spawn((
                 combobox_with_selected(variant_names, selected_index),
                 FieldBinding {
                     source_entity,
-                    component_type_id,
+                    type_path: type_path.to_string(),
                     field_path: field_path.clone(),
                 },
                 ChildOf(container),
@@ -2009,11 +1929,12 @@ fn spawn_enum_field(
                 move |event: On<ComboBoxChangeEvent>, mut commands: Commands| {
                     let variant_name = event.label.clone();
                     let path = path.clone();
+                    let tp = tp.clone();
                     commands.queue(move |world: &mut World| {
                         apply_enum_variant_with_undo(
                             world,
                             source_entity,
-                            component_type_id,
+                            &tp,
                             &path,
                             &variant_name,
                         );
@@ -2045,7 +1966,7 @@ fn spawn_enum_field(
                     depth + 1,
                     child_path,
                     source_entity,
-                    component_type_id,
+                    type_path,
                     entity_names,
                     type_registry,
                     editor_font,
@@ -2060,7 +1981,7 @@ fn spawn_enum_field(
 fn apply_enum_variant_with_undo(
     world: &mut World,
     _entity: Entity,
-    component_type_id: TypeId,
+    type_path: &str,
     field_path: &str,
     variant_name: &str,
 ) {
@@ -2069,46 +1990,24 @@ fn apply_enum_variant_with_undo(
     let selection = world.resource::<Selection>();
     let targets: Vec<Entity> = selection.entities.clone();
 
-    let reg = registry.read();
-    let Some(registration) = reg.get(component_type_id) else {
-        return;
-    };
-    let Some(reflect_component) = registration.data::<ReflectComponent>() else {
-        return;
-    };
+    let new_json = serde_json::Value::String(variant_name.to_string());
 
+    let reg = registry.read();
     let mut sub_commands: Vec<Box<dyn EditorCommand>> = Vec::new();
 
     for &target in &targets {
-        let Ok(entity_ref) = world.get_entity(target) else {
-            continue;
-        };
-        let Some(reflected) = reflect_component.reflect(entity_ref) else {
-            continue;
-        };
-        let old_value = if field_path.is_empty() {
-            reflected.to_dynamic()
-        } else {
-            let Ok(field) = reflected.reflect_path(field_path) else {
-                continue;
-            };
-            field.to_dynamic()
-        };
+        let old_json = world
+            .resource::<jackdaw_jsn::SceneJsnAst>()
+            .get_component_field(target, type_path, field_path, &reg)
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
 
-        let Some(dynamic_variant) = build_dynamic_variant(old_value.as_ref(), variant_name, &reg)
-        else {
-            continue;
-        };
-
-        let new_value: Box<dyn PartialReflect> =
-            Box::new(DynamicEnum::new(variant_name, dynamic_variant));
-
-        sub_commands.push(Box::new(SetComponentField {
+        sub_commands.push(Box::new(SetJsnField {
             entity: target,
-            component_type_id,
+            type_path: type_path.to_string(),
             field_path: field_path.to_string(),
-            old_value,
-            new_value,
+            old_value: old_json,
+            new_value: new_json.clone(),
         }));
     }
     drop(reg);
@@ -2129,52 +2028,4 @@ fn apply_enum_variant_with_undo(
     let mut history = world.resource_mut::<CommandHistory>();
     history.undo_stack.push(cmd);
     history.redo_stack.clear();
-}
-
-/// Build the appropriate DynamicVariant for a given variant name,
-/// using the enum's type info to determine if it's Unit, Tuple, or Struct.
-/// Returns None if the variant has fields whose default values can't be constructed.
-fn build_dynamic_variant(
-    old_enum_value: &dyn PartialReflect,
-    variant_name: &str,
-    registry: &bevy::reflect::TypeRegistry,
-) -> Option<DynamicVariant> {
-    let type_info = old_enum_value.get_represented_type_info()?;
-    let bevy::reflect::TypeInfo::Enum(enum_info) = type_info else {
-        return Some(DynamicVariant::Unit);
-    };
-    let variant_info = enum_info.variant(variant_name)?;
-
-    match variant_info {
-        bevy::reflect::VariantInfo::Unit(_) => Some(DynamicVariant::Unit),
-        bevy::reflect::VariantInfo::Tuple(tuple_info) => {
-            let mut dynamic_tuple = DynamicTuple::default();
-            for i in 0..tuple_info.field_len() {
-                let field_info = tuple_info.field_at(i)?;
-                let type_id = field_info.type_id();
-                let default_val = registry
-                    .get(type_id)
-                    .and_then(|reg| reg.data::<ReflectDefault>())
-                    .map(|rd| rd.default());
-                let default = default_val?;
-                dynamic_tuple.insert_boxed(default.into_partial_reflect());
-            }
-            Some(DynamicVariant::Tuple(dynamic_tuple))
-        }
-        bevy::reflect::VariantInfo::Struct(struct_info) => {
-            let mut dynamic_struct = DynamicStruct::default();
-            for i in 0..struct_info.field_len() {
-                let field_info = struct_info.field_at(i)?;
-                let field_name = field_info.name();
-                let type_id = field_info.type_id();
-                let default_val = registry
-                    .get(type_id)
-                    .and_then(|reg| reg.data::<ReflectDefault>())
-                    .map(|rd| rd.default());
-                let default = default_val?;
-                dynamic_struct.insert_boxed(field_name, default.into_partial_reflect());
-            }
-            Some(DynamicVariant::Struct(dynamic_struct))
-        }
-    }
 }

@@ -188,7 +188,9 @@ fn spawn_brush_from_data(world: &mut World, data: &BrushData) -> Entity {
     if let Some(parent) = parent_entity {
         ec.insert(ChildOf(parent));
     }
-    ec.id()
+    let entity = ec.id();
+    crate::scene_io::register_entity_in_ast(world, entity);
+    entity
 }
 
 /// Spawn a brush or group from stored data. Returns top-level entity ID.
@@ -215,6 +217,7 @@ fn spawn_brush_or_group(world: &mut World, data: &BrushOrGroup) -> Entity {
                 ec.insert(ChildOf(p));
             }
             let group_id = ec.id();
+            crate::scene_io::register_entity_in_ast(world, group_id);
             for child in children {
                 // Children reference the group by the group's stable_id which
                 // we just spawned, so spawn_brush_from_data will find it.
@@ -1079,6 +1082,8 @@ fn spawn_drawn_brush(active: &ActiveDraw, commands: &mut Commands) {
             ))
             .id();
 
+        crate::scene_io::register_entity_in_ast(world, entity);
+
         // Select the new brush
         {
             // Deselect current selection
@@ -1267,7 +1272,8 @@ fn append_to_brush(active: &ActiveDraw, commands: &mut Commands) {
 
         let new_brush = Brush { faces: new_faces };
 
-        // Apply
+        // Apply (ECS + AST)
+        crate::brush::sync_brush_to_ast(world, target_entity, &new_brush);
         if let Some(mut brush) = world.get_mut::<Brush>(target_entity) {
             *brush = new_brush.clone();
         }
@@ -1503,6 +1509,8 @@ fn spawn_polygon_brush(active: &ActiveDraw, commands: &mut Commands) {
                 Visibility::default(),
             ))
             .id();
+
+        crate::scene_io::register_entity_in_ast(world, entity);
 
         // Select the new brush
         {
@@ -2461,7 +2469,8 @@ pub fn join_selected_brushes_impl(world: &mut World) {
             undo_commands.push(Box::new(DespawnEntity::from_world(world, other)));
         }
 
-        // Apply: update primary brush
+        // Apply: update primary brush (ECS + AST)
+        crate::brush::sync_brush_to_ast(world, primary_entity, &new_brush);
         if let Some(mut brush) = world.get_mut::<Brush>(primary_entity) {
             *brush = new_brush;
         }
@@ -3158,8 +3167,9 @@ pub fn extend_face_to_brush_impl(
     if local_clean.len() < 4 {
         return;
     }
-    // Apply via undo-able SetBrush command
+    // Apply via undo-able SetBrush command (ECS + AST)
     let new_brush = Brush { faces: local_clean };
+    crate::brush::sync_brush_to_ast(world, primary, &new_brush);
     if let Some(mut brush) = world.get_mut::<Brush>(primary) {
         *brush = new_brush.clone();
     }

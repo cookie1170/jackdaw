@@ -69,18 +69,10 @@ fn build_dynamic_scene(
     let mut world = World::new();
     world.insert_resource(AppTypeRegistry(type_registry.clone()));
 
-    // First pass: spawn entities with core fields
+    // First pass: spawn empty entities (Name/Transform/Visibility come through components)
     let mut spawned: Vec<Entity> = Vec::new();
-    for jsn in entities {
-        let mut entity = world.spawn_empty();
-        if let Some(name) = &jsn.name {
-            entity.insert(Name::new(name.clone()));
-        }
-        if let Some(t) = &jsn.transform {
-            entity.insert(Transform::from(t.clone()));
-        }
-        let vis: Visibility = jsn.visibility.clone().into();
-        entity.insert(vis);
+    for _jsn in entities {
+        let entity = world.spawn_empty();
         spawned.push(entity.id());
     }
 

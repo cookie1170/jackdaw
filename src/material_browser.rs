@@ -638,14 +638,19 @@ fn handle_apply_material(
                         brush.faces[face_idx].material = event.material.clone();
                     }
                 }
+                let new_brush = brush.clone();
                 let cmd = SetBrush {
                     entity,
                     old,
-                    new: brush.clone(),
+                    new: new_brush.clone(),
                     label: "Apply material".into(),
                 };
                 history.undo_stack.push(Box::new(cmd));
                 history.redo_stack.clear();
+                // Deferred AST sync (SetBrush was pushed without execute)
+                commands.queue(move |world: &mut World| {
+                    crate::brush::sync_brush_to_ast(world, entity, &new_brush);
+                });
                 commands
                     .entity(entity)
                     .insert(crate::inspector::InspectorDirty);
@@ -673,14 +678,19 @@ fn handle_apply_material(
                 for face in brush.faces.iter_mut() {
                     face.material = event.material.clone();
                 }
+                let new_brush = brush.clone();
                 let cmd = SetBrush {
                     entity,
                     old,
-                    new: brush.clone(),
+                    new: new_brush.clone(),
                     label: "Apply material".into(),
                 };
                 history.undo_stack.push(Box::new(cmd));
                 history.redo_stack.clear();
+                // Deferred AST sync (SetBrush was pushed without execute)
+                commands.queue(move |world: &mut World| {
+                    crate::brush::sync_brush_to_ast(world, entity, &new_brush);
+                });
                 commands
                     .entity(entity)
                     .insert(crate::inspector::InspectorDirty);

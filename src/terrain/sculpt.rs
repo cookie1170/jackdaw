@@ -40,6 +40,7 @@ impl EditorCommand for SetTerrainHeights {
         if let Some(mut dirty) = world.get_mut::<TerrainDirtyChunks>(self.entity) {
             dirty.rebuild_all = true;
         }
+        sync_terrain_heights_to_ast(world, self.entity);
     }
 
     fn undo(&mut self, world: &mut World) {
@@ -49,10 +50,23 @@ impl EditorCommand for SetTerrainHeights {
         if let Some(mut dirty) = world.get_mut::<TerrainDirtyChunks>(self.entity) {
             dirty.rebuild_all = true;
         }
+        sync_terrain_heights_to_ast(world, self.entity);
     }
 
     fn description(&self) -> &str {
         &self.label
+    }
+}
+
+fn sync_terrain_heights_to_ast(world: &mut World, entity: Entity) {
+    if let Some(terrain) = world.get::<jackdaw_jsn::Terrain>(entity) {
+        let terrain = terrain.clone();
+        crate::commands::sync_component_to_ast(
+            world,
+            entity,
+            "jackdaw_jsn::types::terrain::Terrain",
+            &terrain,
+        );
     }
 }
 

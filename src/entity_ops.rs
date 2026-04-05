@@ -1,14 +1,6 @@
-use std::any::TypeId;
 use std::path::Path;
 
-use bevy::{
-    ecs::{
-        reflect::{AppTypeRegistry, ReflectComponent},
-        system::SystemState,
-    },
-    gltf::GltfAssetLabel,
-    prelude::*,
-};
+use bevy::{ecs::system::SystemState, gltf::GltfAssetLabel, prelude::*};
 
 use crate::{
     EditorEntity,
@@ -17,11 +9,23 @@ use crate::{
 };
 use bevy::input_focus::InputFocus;
 
-/// Resource storing copied component data for paste operations.
-#[derive(Resource, Default)]
-pub struct ComponentClipboard {
-    /// Snapshots of component data: (type_id, reflected_data)
-    pub data: Vec<(TypeId, Box<dyn PartialReflect>)>,
+/// System clipboard for copy/paste of entities as JSN text.
+/// On Linux/X11 the clipboard is ownership-based: data is only available while
+/// the Clipboard instance is alive. Storing as a Bevy Resource keeps it alive.
+#[derive(Resource)]
+pub struct SystemClipboard {
+    clipboard: arboard::Clipboard,
+    /// Fallback: last copied JSN text, in case system clipboard read fails.
+    last_jsn: String,
+}
+
+impl Default for SystemClipboard {
+    fn default() -> Self {
+        Self {
+            clipboard: arboard::Clipboard::new().expect("Failed to init system clipboard"),
+            last_jsn: String::new(),
+        }
+    }
 }
 
 // Re-export from jackdaw_jsn
@@ -32,8 +36,18 @@ pub struct EntityOpsPlugin;
 impl Plugin for EntityOpsPlugin {
     fn build(&self, app: &mut App) {
         // Note: GltfSource type registration is handled by JsnPlugin
-        app.init_resource::<ComponentClipboard>()
-            .add_systems(Update, handle_entity_keys.in_set(crate::EditorInteraction));
+        match arboard::Clipboard::new() {
+            Ok(clipboard) => {
+                app.insert_resource(SystemClipboard {
+                    clipboard,
+                    last_jsn: String::new(),
+                });
+            }
+            Err(e) => {
+                warn!("Failed to initialize system clipboard: {e}");
+            }
+        }
+        app.add_systems(Update, handle_entity_keys.in_set(crate::EditorInteraction));
     }
 }
 
@@ -159,8 +173,9 @@ fn apply_last_material(entity: Entity) -> impl FnOnce(&mut World) {
 pub fn create_entity_in_world(world: &mut World, template: EntityTemplate) {
     let mut system_state: SystemState<(Commands, ResMut<Selection>)> = SystemState::new(world);
     let (mut commands, mut selection) = system_state.get_mut(world);
-    create_entity(&mut commands, template, &mut selection);
+    let entity = create_entity(&mut commands, template, &mut selection);
     system_state.apply(world);
+    crate::scene_io::register_entity_in_ast(world, entity);
 }
 
 pub fn spawn_gltf(
@@ -334,6 +349,9 @@ pub fn duplicate_selected(world: &mut World) {
 
         new_entities.push(new_root);
     }
+
+    // Register duplicates in AST
+    crate::scene_io::register_entities_in_ast(world, &new_entities);
 
     // Select the new entities
     let mut selection = world.resource_mut::<Selection>();
@@ -693,96 +711,110 @@ fn rotate_selected(world: &mut World, rotation: Quat) {
 }
 
 /// Copy all reflected components from the primary selected entity to the clipboard.
+/// Copy selected entities to the system clipboard as JSN text.
 fn copy_components(world: &mut World) {
     let selection = world.resource::<Selection>();
-    let Some(primary) = selection.primary() else {
+    if selection.entities.is_empty() {
         return;
-    };
-
-    let registry = world.resource::<AppTypeRegistry>().clone();
-    let registry = registry.read();
-
-    let Ok(entity_ref) = world.get_entity(primary) else {
-        return;
-    };
-
-    let mut data = Vec::new();
-    for registration in registry.iter() {
-        let type_id = registration.type_id();
-        let Some(reflect_component) = registration.data::<ReflectComponent>() else {
-            continue;
-        };
-        let Some(reflected) = reflect_component.reflect(entity_ref) else {
-            continue;
-        };
-
-        // Skip internal types
-        let path = registration.type_info().type_path_table().path();
-        if path.starts_with("jackdaw") || path.contains("ChildOf") || path.contains("Children") {
-            continue;
-        }
-
-        data.push((type_id, reflected.to_dynamic()));
     }
 
-    drop(registry);
+    let ast = world.resource::<jackdaw_jsn::SceneJsnAst>();
+    let jsn_entities: Vec<jackdaw_jsn::format::JsnEntity> = selection
+        .entities
+        .iter()
+        .filter_map(|&e| {
+            ast.node_for_entity(e)
+                .map(|node| jackdaw_jsn::format::JsnEntity {
+                    parent: None,
+                    components: node.components.clone(),
+                })
+        })
+        .collect();
 
-    let mut clipboard = world.resource_mut::<ComponentClipboard>();
-    clipboard.data = data;
-}
+    if jsn_entities.is_empty() {
+        warn!("Copy: no selected entities have AST nodes");
+        return;
+    }
 
-/// Paste component values from clipboard onto all selected entities.
-fn paste_components(world: &mut World) {
-    let clipboard_data: Vec<(TypeId, Box<dyn PartialReflect>)> = {
-        let clipboard = world.resource::<ComponentClipboard>();
-        if clipboard.data.is_empty() {
+    let jsn_text = match serde_json::to_string_pretty(&jsn_entities) {
+        Ok(t) => t,
+        Err(e) => {
+            warn!("Failed to serialize entities for clipboard: {e}");
             return;
         }
-        clipboard
-            .data
-            .iter()
-            .map(|(tid, val)| (*tid, val.to_dynamic()))
-            .collect()
     };
 
-    let selection = world.resource::<Selection>();
-    let entities: Vec<Entity> = selection.entities.clone();
+    let Some(mut cb) = world.get_resource_mut::<SystemClipboard>() else {
+        return;
+    };
+    info!(
+        "Display: WAYLAND_DISPLAY={:?} DISPLAY={:?}",
+        std::env::var("WAYLAND_DISPLAY").ok(),
+        std::env::var("DISPLAY").ok(),
+    );
+    cb.last_jsn = jsn_text.clone();
+    match cb.clipboard.set_text(&jsn_text) {
+        Ok(()) => {
+            // Verify by reading back, like BSN branch does
+            match cb.clipboard.get_text() {
+                Ok(readback) => info!(
+                    "Clipboard set+readback OK ({} bytes written, {} read back)",
+                    jsn_text.len(),
+                    readback.len(),
+                ),
+                Err(e) => warn!("Clipboard set OK but readback failed: {e}"),
+            }
+        }
+        Err(e) => warn!("Copy: system clipboard failed ({e}), using internal fallback"),
+    }
+}
 
-    if entities.is_empty() {
+/// Paste entities from system clipboard JSN text.
+fn paste_components(world: &mut World) {
+    let jsn_text = {
+        let Some(mut cb) = world.get_resource_mut::<SystemClipboard>() else {
+            return;
+        };
+        cb.clipboard
+            .get_text()
+            .unwrap_or_else(|_| cb.last_jsn.clone())
+    };
+
+    if jsn_text.trim().is_empty() {
         return;
     }
 
-    let registry = world.resource::<AppTypeRegistry>().clone();
-    let registry = registry.read();
-
-    for &entity in &entities {
-        if world.get_entity(entity).is_err() {
-            continue;
+    let parsed: Vec<jackdaw_jsn::format::JsnEntity> = match serde_json::from_str(&jsn_text) {
+        Ok(entities) => entities,
+        Err(e) => {
+            warn!("Clipboard text is not valid JSN: {e}");
+            return;
         }
+    };
 
-        for (type_id, value) in &clipboard_data {
-            let Some(registration) = registry.get(*type_id) else {
-                continue;
-            };
-            let Some(reflect_component) = registration.data::<ReflectComponent>() else {
-                continue;
-            };
+    if parsed.is_empty() {
+        return;
+    }
 
-            // Apply: if component exists, update it; if not, insert it
-            let has_component = {
-                let entity_ref = world.get_entity(entity).unwrap();
-                reflect_component.reflect(entity_ref).is_some()
-            };
-            if has_component {
-                let existing = reflect_component
-                    .reflect_mut(world.entity_mut(entity))
-                    .unwrap();
-                existing.into_inner().apply(value.as_ref());
-            } else {
-                reflect_component.insert(&mut world.entity_mut(entity), value.as_ref(), &registry);
-            }
+    let local_assets = std::collections::HashMap::new();
+    let parent_path = std::path::Path::new(".");
+    let spawned = crate::scene_io::load_scene_from_jsn(world, &parsed, parent_path, &local_assets);
+
+    crate::scene_io::register_entities_in_ast(world, &spawned);
+
+    // Deselect current, select pasted
+    for &entity in &world.resource::<Selection>().entities.clone() {
+        if let Ok(mut ec) = world.get_entity_mut(entity) {
+            ec.remove::<Selected>();
         }
     }
+    let mut selection = world.resource_mut::<Selection>();
+    selection.entities = spawned.clone();
+    for &entity in &spawned {
+        world.entity_mut(entity).insert(Selected);
+    }
+
+    info!("Pasted {} entities from JSN clipboard", spawned.len());
 }
 
 fn hide_selected(world: &mut World) {
@@ -806,12 +838,12 @@ fn hide_selected(world: &mut World) {
             _ => Visibility::Hidden,
         };
 
-        let mut cmd = crate::commands::SetComponentField {
+        let mut cmd = crate::commands::SetJsnField {
             entity,
-            component_type_id: std::any::TypeId::of::<Visibility>(),
+            type_path: "bevy_camera::visibility::Visibility".to_string(),
             field_path: String::new(),
-            old_value: Box::new(current),
-            new_value: Box::new(new_visibility),
+            old_value: serde_json::Value::String(format!("{current:?}")),
+            new_value: serde_json::Value::String(format!("{new_visibility:?}")),
         };
         cmd.execute(world);
         cmds.push(Box::new(cmd));
@@ -846,12 +878,12 @@ fn unhide_all_entities(world: &mut World) {
     };
 
     for entity in hidden {
-        let mut cmd = crate::commands::SetComponentField {
+        let mut cmd = crate::commands::SetJsnField {
             entity,
-            component_type_id: std::any::TypeId::of::<Visibility>(),
+            type_path: "bevy_camera::visibility::Visibility".to_string(),
             field_path: String::new(),
-            old_value: Box::new(Visibility::Hidden),
-            new_value: Box::new(Visibility::Inherited),
+            old_value: serde_json::Value::String("Hidden".to_string()),
+            new_value: serde_json::Value::String("Inherited".to_string()),
         };
         cmd.execute(world);
         cmds.push(Box::new(cmd));
@@ -886,12 +918,12 @@ fn hide_all_entities(world: &mut World) {
     };
 
     for (entity, current) in to_hide {
-        let mut cmd = crate::commands::SetComponentField {
+        let mut cmd = crate::commands::SetJsnField {
             entity,
-            component_type_id: std::any::TypeId::of::<Visibility>(),
+            type_path: "bevy_camera::visibility::Visibility".to_string(),
             field_path: String::new(),
-            old_value: Box::new(current),
-            new_value: Box::new(Visibility::Hidden),
+            old_value: serde_json::Value::String(format!("{current:?}")),
+            new_value: serde_json::Value::String("Hidden".to_string()),
         };
         cmd.execute(world);
         cmds.push(Box::new(cmd));

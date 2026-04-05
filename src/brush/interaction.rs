@@ -1846,6 +1846,7 @@ pub(super) fn handle_clip_mode(
                             spawner.insert(ChildOf(parent));
                         }
                         let entity = spawner.id();
+                        crate::scene_io::register_entity_in_ast(world, entity);
 
                         let create_cmd = CreateBrushCommand {
                             data: brush_data_from_entity(world, entity),

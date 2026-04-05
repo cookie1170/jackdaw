@@ -45,6 +45,7 @@ pub(crate) fn add_component_displays(
     icon_font: Res<IconFont>,
     editor_font: Res<EditorFont>,
     materials: Res<Assets<StandardMaterial>>,
+    ast: Res<jackdaw_jsn::SceneJsnAst>,
 ) {
     let Some(primary) = selection.primary() else {
         return;
@@ -55,6 +56,12 @@ pub(crate) fn add_component_displays(
 
     let source_entity = entity_ref.entity();
     let sel_count = selection.entities.len();
+
+    // Collect AST-tracked component type paths
+    let jsn_type_paths: HashSet<String> = ast
+        .node_for_entity(source_entity)
+        .map(|node| node.components.keys().cloned().collect())
+        .unwrap_or_default();
 
     build_inspector_displays(
         &mut commands,
@@ -70,6 +77,7 @@ pub(crate) fn add_component_displays(
         &editor_font,
         false,
         &materials,
+        &jsn_type_paths,
     );
 
     // Set up monitoring: watch the selected entity for InspectorDirty
@@ -95,6 +103,7 @@ pub(crate) fn build_inspector_displays(
     editor_font: &EditorFont,
     read_only: bool,
     materials: &Assets<StandardMaterial>,
+    jsn_type_paths: &HashSet<String>,
 ) {
     // Show multi-selection header when multiple entities are selected
     if selection_count > 1 {
@@ -231,6 +240,10 @@ pub(crate) fn build_inspector_displays(
                 let table = registration.type_info().type_path_table();
                 let full_path = table.path();
                 if full_path.starts_with("jackdaw") && !full_path.starts_with("jackdaw_jsn") {
+                    return None;
+                }
+                // AST filter: only show components tracked in the AST
+                if !jsn_type_paths.is_empty() && !jsn_type_paths.contains(full_path) {
                     return None;
                 }
                 let short = table.short_path().to_string();
@@ -461,6 +474,7 @@ pub(crate) fn build_inspector_displays(
             }
 
             // Priority 3: Generic reflection display
+            let full_path = registration.type_info().type_path_table().path();
             reflect_fields::spawn_reflected_fields(
                 commands,
                 body_entity,
@@ -468,7 +482,7 @@ pub(crate) fn build_inspector_displays(
                 0,
                 String::new(),
                 source_entity,
-                type_id,
+                full_path,
                 names,
                 type_registry,
                 &editor_font.0,
@@ -553,6 +567,7 @@ pub(crate) fn on_inspector_dirty(
         )>,
     >,
     materials: Res<Assets<StandardMaterial>>,
+    ast: Res<jackdaw_jsn::SceneJsnAst>,
 ) {
     let (inspector_entity, target, children) = inspector.into_inner();
     let source_entity = target.0;
@@ -577,6 +592,11 @@ pub(crate) fn on_inspector_dirty(
     };
     let sel_count = selection.entities.len();
 
+    let jsn_type_paths: HashSet<String> = ast
+        .node_for_entity(source_entity)
+        .map(|node| node.components.keys().cloned().collect())
+        .unwrap_or_default();
+
     build_inspector_displays(
         &mut commands,
         components,
@@ -591,6 +611,7 @@ pub(crate) fn on_inspector_dirty(
         &editor_font,
         false,
         &materials,
+        &jsn_type_paths,
     );
 }
 

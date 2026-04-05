@@ -142,6 +142,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<layout::ActiveWorkspace>()
             .init_resource::<layout::KeybindHelpPopover>()
             .init_resource::<asset_catalog::AssetCatalog>()
+            .init_resource::<jackdaw_jsn::SceneJsnAst>()
             .add_systems(
                 OnEnter(AppState::Editor),
                 (spawn_layout, populate_menu).chain(),
@@ -526,6 +527,7 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
                 let entity = terrain::spawn_terrain_entity(&mut commands);
                 selection.select_single(&mut commands, entity);
                 system_state.apply(world);
+                scene_io::register_entity_in_ast(world, entity);
             });
         }
         "add.prefab" => {

@@ -56,12 +56,9 @@ pub fn save_entity_template(world: &mut World, name: &str) {
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
 
-    // Component types handled as explicit fields
+    // Component types to skip — only computed/internal
     let skip_ids: HashSet<TypeId> = HashSet::from([
-        TypeId::of::<Name>(),
-        TypeId::of::<Transform>(),
         TypeId::of::<GlobalTransform>(),
-        TypeId::of::<Visibility>(),
         TypeId::of::<InheritedVisibility>(),
         TypeId::of::<ViewVisibility>(),
         TypeId::of::<ChildOf>(),
@@ -73,12 +70,6 @@ pub fn save_entity_template(world: &mut World, name: &str) {
         .map(|&entity| {
             let entity_ref = world.entity(entity);
 
-            let name = entity_ref.get::<Name>().map(|n| n.to_string());
-            let transform = entity_ref.get::<Transform>().map(|t| (*t).into());
-            let visibility = entity_ref
-                .get::<Visibility>()
-                .map(|v| (*v).into())
-                .unwrap_or_default();
             let parent = entity_ref
                 .get::<ChildOf>()
                 .and_then(|c| index_map.get(&c.parent()).copied());
@@ -104,13 +95,7 @@ pub fn save_entity_template(world: &mut World, name: &str) {
                 }
             }
 
-            JsnEntity {
-                name,
-                transform,
-                visibility,
-                parent,
-                components,
-            }
+            JsnEntity { parent, components }
         })
         .collect();
 
@@ -159,8 +144,9 @@ pub fn instantiate_template(world: &mut World, path: &str, position: Vec3) {
 
     let parent_path = Path::new(path).parent().unwrap_or(Path::new(""));
     let local_assets = HashMap::new();
-    let (_spawned, roots) =
+    let (spawned, roots) =
         spawn_jsn_entities(world, &jsn_entities, position, parent_path, &local_assets);
+    crate::scene_io::register_entities_in_ast(world, &spawned);
     finalize_instantiation(world, &roots);
 }
 
@@ -200,6 +186,9 @@ pub fn instantiate_jsn_prefab(world: &mut World, path: &str, position: Vec3) {
     // Build baseline snapshots for override tracking
     build_prefab_baselines(world, &spawned);
 
+    // Register in AST
+    crate::scene_io::register_entities_in_ast(world, &spawned);
+
     // Finalize: undo support + selection
     finalize_instantiation(world, &roots);
 }
@@ -220,18 +209,10 @@ fn spawn_jsn_entities(
         .map(|c| c.handles.clone())
         .unwrap_or_default();
 
-    // First pass: spawn entities with core fields
+    // First pass: spawn empty entities (Name/Transform/Visibility come from components)
     let mut spawned: Vec<Entity> = Vec::new();
-    for (i, jsn) in jsn_entities.iter().enumerate() {
-        let mut entity = world.spawn_empty();
-        entity.insert(Name::new(
-            jsn.name.clone().unwrap_or_else(|| format!("Entity {}", i)),
-        ));
-        if let Some(t) = &jsn.transform {
-            entity.insert(Transform::from(t.clone()));
-        }
-        let vis: Visibility = jsn.visibility.clone().into();
-        entity.insert(vis);
+    for _jsn in jsn_entities.iter() {
+        let entity = world.spawn_empty();
         spawned.push(entity.id());
     }
 
@@ -326,10 +307,7 @@ fn build_prefab_baselines(world: &mut World, spawned: &[Entity]) {
     let registry = registry.read();
 
     let skip_ids: HashSet<TypeId> = HashSet::from([
-        TypeId::of::<Name>(),
-        TypeId::of::<Transform>(),
         TypeId::of::<GlobalTransform>(),
-        TypeId::of::<Visibility>(),
         TypeId::of::<InheritedVisibility>(),
         TypeId::of::<ViewVisibility>(),
         TypeId::of::<ChildOf>(),

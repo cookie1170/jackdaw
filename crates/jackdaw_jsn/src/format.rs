@@ -80,18 +80,94 @@ impl From<JsnVisibility> for Visibility {
     }
 }
 
+/// JSN v3 entity — all data is in components (Name, Transform, Visibility included).
+/// Only `parent` remains structural (serialization ordering).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct JsnEntity {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transform: Option<JsnTransform>,
-    #[serde(default, skip_serializing_if = "JsnVisibility::is_default")]
-    pub visibility: JsnVisibility,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<usize>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub components: HashMap<String, serde_json::Value>,
+}
+
+/// Legacy v2 entity format — only used for migration.
+#[derive(Deserialize, Clone, Debug)]
+pub struct JsnEntityV2 {
+    pub name: Option<String>,
+    pub transform: Option<JsnTransform>,
+    #[serde(default)]
+    pub visibility: JsnVisibility,
+    pub parent: Option<usize>,
+    #[serde(default)]
+    pub components: HashMap<String, serde_json::Value>,
+}
+
+/// Legacy v2 scene format — only used for migration.
+#[derive(Deserialize, Clone, Debug)]
+pub struct JsnSceneV2 {
+    pub jsn: JsnHeader,
+    pub metadata: JsnMetadata,
+    #[serde(default)]
+    pub assets: JsnAssets,
+    pub editor: Option<JsnEditorState>,
+    pub scene: Vec<JsnEntityV2>,
+}
+
+impl JsnSceneV2 {
+    pub fn migrate_to_v3(self) -> JsnScene {
+        let scene = self
+            .scene
+            .into_iter()
+            .map(|e| {
+                let mut components = e.components;
+                if let Some(t) = e.transform {
+                    components.insert(
+                        "bevy_transform::components::transform::Transform".to_string(),
+                        serde_json::json!({
+                            "translation": [t.translation.x, t.translation.y, t.translation.z],
+                            "rotation": [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
+                            "scale": [t.scale.x, t.scale.y, t.scale.z],
+                        }),
+                    );
+                }
+                match e.visibility {
+                    JsnVisibility::Visible => {
+                        components.insert(
+                            "bevy_camera::visibility::Visibility".to_string(),
+                            serde_json::Value::String("Visible".to_string()),
+                        );
+                    }
+                    JsnVisibility::Hidden => {
+                        components.insert(
+                            "bevy_camera::visibility::Visibility".to_string(),
+                            serde_json::Value::String("Hidden".to_string()),
+                        );
+                    }
+                    JsnVisibility::Inherited => {}
+                }
+                if let Some(name) = e.name {
+                    components.insert(
+                        "bevy_ecs::name::Name".to_string(),
+                        serde_json::Value::String(name),
+                    );
+                }
+                JsnEntity {
+                    parent: e.parent,
+                    components,
+                }
+            })
+            .collect();
+        JsnScene {
+            jsn: JsnHeader {
+                format_version: [3, 0, 0],
+                ..self.jsn
+            },
+            metadata: self.metadata,
+            assets: self.assets,
+            editor: self.editor,
+            scene,
+        }
+    }
 }
 
 /// Format version and tool info.
@@ -108,7 +184,7 @@ pub struct JsnHeader {
 impl Default for JsnHeader {
     fn default() -> Self {
         Self {
-            format_version: [2, 0, 0],
+            format_version: [3, 0, 0],
             editor_version: env!("CARGO_PKG_VERSION").to_string(),
             bevy_version: "0.18".to_string(),
         }

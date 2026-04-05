@@ -225,6 +225,8 @@ pub fn build_remote_inspector_displays(
         return;
     };
 
+    // Remote entities are read-only, no AST filter
+    let empty_jsn_paths = std::collections::HashSet::new();
     component_display::build_inspector_displays(
         &mut commands,
         components,
@@ -239,6 +241,7 @@ pub fn build_remote_inspector_displays(
         &editor_font,
         true, // read_only
         &materials,
+        &empty_jsn_paths,
     );
 
     // Spawn JSON fallback section for unregistered components

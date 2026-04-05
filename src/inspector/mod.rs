@@ -6,7 +6,6 @@ mod material_display;
 pub(crate) mod reflect_fields;
 
 use crate::EditorEntity;
-use std::any::TypeId;
 
 use bevy::prelude::*;
 
@@ -221,7 +220,7 @@ pub(super) struct InspectorGroupSection;
 #[derive(Component)]
 pub(super) struct FieldBinding {
     pub(super) source_entity: Entity,
-    pub(super) component_type_id: TypeId,
+    pub(super) type_path: String,
     pub(super) field_path: String,
 }
 

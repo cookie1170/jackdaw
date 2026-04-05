@@ -39,6 +39,7 @@ struct ComponentInfo {
     description: String,
     type_id: TypeId,
     component_id: ComponentId,
+    type_path_full: String,
 }
 
 /// Handle click on the "+" button to open the component picker.
@@ -134,6 +135,7 @@ pub(crate) fn on_add_component_button_click(
             description,
             type_id,
             component_id,
+            type_path_full: full_path.to_string(),
         });
     }
 
@@ -240,6 +242,7 @@ pub(crate) fn on_add_component_button_click(
             let category = info.category.clone();
             let description = info.description.clone();
             let module_path = info.module_path.clone();
+            let type_path_full = info.type_path_full.clone();
 
             // Subtitle: description takes priority, otherwise module path
             let subtitle = if !description.is_empty() {
@@ -267,23 +270,28 @@ pub(crate) fn on_add_component_button_click(
                     },
                     BackgroundColor(Color::NONE),
                     ChildOf(list),
-                    observe(move |_: On<Pointer<Click>>, mut commands: Commands| {
-                        commands.queue(move |world: &mut World| {
-                            let cmd = crate::commands::AddComponent {
-                                entity: source_entity,
-                                type_id,
-                                component_id,
-                            };
-                            let mut cmd = Box::new(cmd);
-                            cmd.execute(world);
-                            let mut history =
-                                world.resource_mut::<crate::commands::CommandHistory>();
-                            history.undo_stack.push(cmd);
-                            history.redo_stack.clear();
+                    observe({
+                        let type_path_full = type_path_full.clone();
+                        move |_: On<Pointer<Click>>, mut commands: Commands| {
+                            let tp = type_path_full.clone();
+                            commands.queue(move |world: &mut World| {
+                                let cmd = crate::commands::AddComponent {
+                                    entity: source_entity,
+                                    type_id,
+                                    component_id,
+                                    type_path: tp,
+                                };
+                                let mut cmd = Box::new(cmd);
+                                cmd.execute(world);
+                                let mut history =
+                                    world.resource_mut::<crate::commands::CommandHistory>();
+                                history.undo_stack.push(cmd);
+                                history.redo_stack.clear();
 
-                            // Signal the inspector to rebuild
-                            world.entity_mut(source_entity).insert(InspectorDirty);
-                        });
+                                // Signal the inspector to rebuild
+                                world.entity_mut(source_entity).insert(InspectorDirty);
+                            });
+                        }
                     }),
                     observe(
                         move |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {

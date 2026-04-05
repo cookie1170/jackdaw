@@ -1,4 +1,3 @@
-use std::any::TypeId;
 use std::collections::HashSet;
 
 use bevy::{input_focus::InputFocus, prelude::*, ui::ui_transform::UiGlobalTransform};
@@ -20,7 +19,7 @@ use jackdaw_widgets::tree_view::{
 
 use crate::{
     EditorEntity, EditorHidden,
-    commands::{CommandHistory, EditorCommand, ReparentEntity, SetComponentField},
+    commands::{CommandHistory, EditorCommand, ReparentEntity, SetJsnField},
     entity_ops,
     layout::HierarchyFilter,
     selection::{Selected, Selection},
@@ -966,16 +965,15 @@ fn on_visibility_toggled(
         _ => Visibility::Hidden,
     };
 
-    // Apply with undo
-    let old_value: Box<dyn bevy::reflect::PartialReflect> = Box::new(current);
-    let new_value: Box<dyn bevy::reflect::PartialReflect> = Box::new(new_visibility);
+    let old_json = serde_json::Value::String(format!("{current:?}"));
+    let new_json = serde_json::Value::String(format!("{new_visibility:?}"));
 
-    let cmd = SetComponentField {
+    let cmd = SetJsnField {
         entity: source,
-        component_type_id: TypeId::of::<Visibility>(),
+        type_path: "bevy_camera::visibility::Visibility".to_string(),
         field_path: String::new(),
-        old_value,
-        new_value,
+        old_value: old_json,
+        new_value: new_json,
     };
 
     commands.queue(move |world: &mut World| {
@@ -1209,12 +1207,12 @@ fn on_tree_row_renamed(event: On<TreeRowRenamed>, mut commands: Commands, names:
     }
 
     commands.queue(move |world: &mut World| {
-        let cmd = SetComponentField {
+        let cmd = SetJsnField {
             entity: source,
-            component_type_id: TypeId::of::<Name>(),
+            type_path: "bevy_ecs::name::Name".to_string(),
             field_path: String::new(),
-            old_value: Box::new(Name::new(old_name)),
-            new_value: Box::new(Name::new(new_name)),
+            old_value: serde_json::Value::String(old_name),
+            new_value: serde_json::Value::String(new_name),
         };
         let mut cmd = Box::new(cmd);
         cmd.execute(world);

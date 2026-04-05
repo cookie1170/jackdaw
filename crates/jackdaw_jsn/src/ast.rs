@@ -1,0 +1,447 @@
+use std::collections::{HashMap, HashSet};
+
+use bevy::prelude::*;
+use bevy::reflect::TypeRegistry;
+
+use crate::format::{JsnAssets, JsnEntity, JsnMetadata, JsnScene};
+
+/// In-memory scene document — the single source of truth for scene data.
+///
+/// All editor mutations should go through this resource. ECS entities exist
+/// as a preview layer, kept in sync by `apply_dirty_jsn_to_ecs`.
+///
+/// Structurally parallel to the BSN branch's `SceneBsnAst`, enabling a
+/// mechanical swap when BSN ships upstream.
+#[derive(Resource, Default)]
+pub struct SceneJsnAst {
+    /// Entity nodes, indexed by position.
+    pub nodes: Vec<JsnEntityNode>,
+    /// Map from ECS preview entity to node index.
+    pub ecs_to_jsn: HashMap<Entity, usize>,
+    /// Indices of nodes whose ECS preview entities need re-sync.
+    pub dirty_indices: HashSet<usize>,
+    /// Inline assets table (materials, images, etc.).
+    pub assets: JsnAssets,
+}
+
+/// A single entity in the scene document.
+///
+/// Mirrors `JsnEntity` from the file format — `name` and `parent` are
+/// structural fields, everything else (Transform, Visibility, Brush, etc.)
+/// lives in `components` as `serde_json::Value`.
+pub struct JsnEntityNode {
+    /// Parent index into `SceneJsnAst::nodes`.
+    pub parent: Option<usize>,
+    /// All component data keyed by type path (e.g. `"bevy_transform::components::transform::Transform"`).
+    /// Includes Name, Transform, Visibility — everything is a component.
+    pub components: HashMap<String, serde_json::Value>,
+    /// The ECS entity used to preview this node in the viewport.
+    pub ecs_entity: Option<Entity>,
+}
+
+impl SceneJsnAst {
+    /// Populate from a loaded `JsnScene` and the ECS entities that were spawned for it.
+    ///
+    /// `entity_map` maps JSN entity index → spawned ECS entity.
+    pub fn from_jsn_scene(scene: &JsnScene, entity_map: &[Entity]) -> Self {
+        let mut ecs_to_jsn = HashMap::new();
+        let nodes = scene
+            .scene
+            .iter()
+            .enumerate()
+            .map(|(i, jsn)| {
+                let ecs_entity = entity_map.get(i).copied();
+                if let Some(e) = ecs_entity {
+                    ecs_to_jsn.insert(e, i);
+                }
+                JsnEntityNode {
+                    parent: jsn.parent,
+                    components: jsn.components.clone(),
+                    ecs_entity,
+                }
+            })
+            .collect();
+
+        Self {
+            nodes,
+            ecs_to_jsn,
+            dirty_indices: HashSet::new(),
+            assets: scene.assets.clone(),
+        }
+    }
+
+    /// Emit a `JsnScene` for serialization to disk.
+    pub fn to_jsn_scene(&self, metadata: JsnMetadata) -> JsnScene {
+        let scene = self
+            .nodes
+            .iter()
+            .map(|node| JsnEntity {
+                parent: node.parent,
+                components: node.components.clone(),
+            })
+            .collect();
+
+        JsnScene {
+            jsn: crate::format::JsnHeader::default(),
+            metadata,
+            assets: self.assets.clone(),
+            editor: None,
+            scene,
+        }
+    }
+
+    /// Look up a node by ECS entity.
+    pub fn node_for_entity(&self, entity: Entity) -> Option<&JsnEntityNode> {
+        self.ecs_to_jsn
+            .get(&entity)
+            .and_then(|&idx| self.nodes.get(idx))
+    }
+
+    /// Look up a node mutably by ECS entity.
+    pub fn node_for_entity_mut(&mut self, entity: Entity) -> Option<&mut JsnEntityNode> {
+        self.ecs_to_jsn
+            .get(&entity)
+            .copied()
+            .and_then(|idx| self.nodes.get_mut(idx))
+    }
+
+    /// Mark a node as dirty so its ECS entity will be re-synced.
+    pub fn mark_dirty(&mut self, entity: Entity) {
+        if let Some(&idx) = self.ecs_to_jsn.get(&entity) {
+            self.dirty_indices.insert(idx);
+        }
+    }
+
+    /// Clear all state (e.g. when loading a new scene or creating a blank scene).
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+        self.ecs_to_jsn.clear();
+        self.dirty_indices.clear();
+        self.assets = JsnAssets::default();
+    }
+
+    // ── Entity lifecycle ─────────────────────────────────────────────
+
+    /// Create a new node for an ECS entity and register it in the AST.
+    /// Returns the node index.
+    pub fn create_node(&mut self, ecs_entity: Entity, parent: Option<Entity>) -> usize {
+        let parent_idx = parent.and_then(|p| self.ecs_to_jsn.get(&p).copied());
+        let idx = self.nodes.len();
+        self.nodes.push(JsnEntityNode {
+            parent: parent_idx,
+            components: HashMap::new(),
+            ecs_entity: Some(ecs_entity),
+        });
+        self.ecs_to_jsn.insert(ecs_entity, idx);
+        idx
+    }
+
+    /// Remove a node by ECS entity. Returns the removed node for undo.
+    pub fn remove_node(&mut self, entity: Entity) -> Option<JsnEntityNode> {
+        let idx = self.ecs_to_jsn.remove(&entity)?;
+        if idx < self.nodes.len() {
+            let node = self.nodes.remove(idx);
+            // Re-index all entries after the removed one
+            for entry in self.ecs_to_jsn.values_mut() {
+                if *entry > idx {
+                    *entry -= 1;
+                }
+            }
+            // Fix parent references
+            for node in &mut self.nodes {
+                if let Some(ref mut parent) = node.parent {
+                    if *parent == idx {
+                        *parent = 0; // orphan -- will need proper handling
+                    } else if *parent > idx {
+                        *parent -= 1;
+                    }
+                }
+            }
+            self.dirty_indices.remove(&idx);
+            Some(node)
+        } else {
+            None
+        }
+    }
+
+    /// Check if an ECS entity is tracked in the AST.
+    pub fn contains_entity(&self, entity: Entity) -> bool {
+        self.ecs_to_jsn.contains_key(&entity)
+    }
+
+    // ── Component field accessors ──────────────────────────────────────
+
+    /// Get a component's full JSON value by type path.
+    pub fn get_component(&self, entity: Entity, type_path: &str) -> Option<&serde_json::Value> {
+        self.node_for_entity(entity)?.components.get(type_path)
+    }
+
+    /// Set a component's full JSON value by type path, marking the node dirty.
+    pub fn set_component(&mut self, entity: Entity, type_path: &str, value: serde_json::Value) {
+        if let Some(node) = self.node_for_entity_mut(entity) {
+            node.components.insert(type_path.to_string(), value);
+        }
+        self.mark_dirty(entity);
+    }
+
+    /// Get a nested field within a component's JSON by dotted path.
+    /// Uses the type registry to resolve named fields to array indices when
+    /// the JSON value is an array (e.g., Vec3 serializes as [x, y, z]).
+    pub fn get_component_field(
+        &self,
+        entity: Entity,
+        type_path: &str,
+        field_path: &str,
+        registry: &TypeRegistry,
+    ) -> Option<&serde_json::Value> {
+        let component = self.get_component(entity, type_path)?;
+        let registration = registry.get_with_type_path(type_path)?;
+        typed_json_path_get(component, field_path, registration, registry)
+    }
+
+    /// Set a nested field within a component's JSON by dotted path, marking dirty.
+    /// Uses the type registry to resolve named fields to array indices.
+    pub fn set_component_field(
+        &mut self,
+        entity: Entity,
+        type_path: &str,
+        field_path: &str,
+        value: serde_json::Value,
+        registry: &TypeRegistry,
+    ) {
+        let registration = registry.get_with_type_path(type_path);
+        if let Some(node) = self.node_for_entity_mut(entity) {
+            if let Some(component) = node.components.get_mut(type_path) {
+                if let Some(registration) = registration {
+                    typed_json_path_set(component, field_path, value, registration, registry);
+                }
+            }
+        }
+        self.mark_dirty(entity);
+    }
+}
+
+// ── Type-aware JSON path navigation ────────────────────────────────────
+//
+// Mirrors BSN's BsnValue tree navigation. Uses the TypeRegistry to resolve
+// named fields to array indices when the JSON value is an array (e.g., Vec3
+// serializes as [x, y, z] but reflection paths use `translation.x`).
+
+use bevy::reflect::{TypeInfo, TypeRegistration};
+
+/// Resolve a field name to an array index using type info.
+/// Returns `None` if the type doesn't have named fields or the name isn't found.
+fn field_index_from_type_info(type_info: &TypeInfo, field_name: &str) -> Option<usize> {
+    match type_info {
+        TypeInfo::Struct(s) => s.index_of(field_name),
+        TypeInfo::TupleStruct(_) => field_name.parse::<usize>().ok(),
+        _ => None,
+    }
+}
+
+/// Get the TypeRegistration for a field by name, advancing through the type tree.
+fn field_type_registration<'a>(
+    type_info: &TypeInfo,
+    field_name: &str,
+    registry: &'a TypeRegistry,
+) -> Option<&'a TypeRegistration> {
+    let field_type_id = match type_info {
+        TypeInfo::Struct(s) => s.field(field_name).map(|f| f.type_id()),
+        TypeInfo::TupleStruct(ts) => {
+            let idx = field_name.parse::<usize>().ok()?;
+            ts.field_at(idx).map(|f| f.type_id())
+        }
+        TypeInfo::List(l) => Some(l.item_ty().id()),
+        _ => None,
+    }?;
+    registry.get(field_type_id)
+}
+
+/// Navigate into a JSON value using a dotted field path and type info.
+fn typed_json_path_get<'a>(
+    root: &'a serde_json::Value,
+    path: &str,
+    registration: &TypeRegistration,
+    registry: &TypeRegistry,
+) -> Option<&'a serde_json::Value> {
+    if path.is_empty() {
+        return Some(root);
+    }
+
+    let mut current = root;
+    let mut current_reg = registration;
+
+    for segment in path.split('.').filter(|s| !s.is_empty()) {
+        let type_info = current_reg.type_info();
+
+        // Handle bracket indexing (e.g., "faces[0]")
+        if let Some(bracket_pos) = segment.find('[') {
+            let key = &segment[..bracket_pos];
+            let idx_str = &segment[bracket_pos + 1..segment.len() - 1];
+            let idx: usize = idx_str.parse().ok()?;
+
+            // Navigate to the key first
+            current = navigate_json_field(current, key, type_info)?;
+            // Then look up the list element type
+            if let Some(key_reg) = field_type_registration(type_info, key, registry) {
+                current_reg = key_reg;
+            }
+            // Navigate into the array
+            current = current.get(idx)?;
+            // Advance type info to list element
+            let list_info = current_reg.type_info();
+            if let TypeInfo::List(l) = list_info {
+                if let Some(elem_reg) = registry.get(l.item_ty().id()) {
+                    current_reg = elem_reg;
+                }
+            }
+        } else {
+            // Simple field navigation
+            current = navigate_json_field(current, segment, type_info)?;
+            // Advance type info
+            if let Some(next_reg) = field_type_registration(type_info, segment, registry) {
+                current_reg = next_reg;
+            }
+        }
+    }
+
+    Some(current)
+}
+
+/// Navigate one level into a JSON value using a field name and type info.
+/// Handles both Object (named key) and Array (field index from type info).
+fn navigate_json_field<'a>(
+    json: &'a serde_json::Value,
+    field_name: &str,
+    type_info: &TypeInfo,
+) -> Option<&'a serde_json::Value> {
+    match json {
+        serde_json::Value::Object(_) => json.get(field_name),
+        serde_json::Value::Array(_) => {
+            // Resolve named field to array index via type info
+            let idx = if let Ok(i) = field_name.parse::<usize>() {
+                i
+            } else {
+                field_index_from_type_info(type_info, field_name)?
+            };
+            json.get(idx)
+        }
+        _ => None,
+    }
+}
+
+/// Set a value at a dotted field path within a JSON value, using type info.
+fn typed_json_path_set(
+    root: &mut serde_json::Value,
+    path: &str,
+    value: serde_json::Value,
+    registration: &TypeRegistration,
+    registry: &TypeRegistry,
+) {
+    if path.is_empty() {
+        *root = value;
+        return;
+    }
+
+    let segments: Vec<&str> = path.split('.').filter(|s| !s.is_empty()).collect();
+    let mut current = root;
+    let mut current_reg = registration;
+
+    for (i, segment) in segments.iter().enumerate() {
+        let is_last = i == segments.len() - 1;
+        let type_info = current_reg.type_info();
+
+        if let Some(bracket_pos) = segment.find('[') {
+            let key = &segment[..bracket_pos];
+            let idx_str = &segment[bracket_pos + 1..segment.len() - 1];
+            let idx: usize = match idx_str.parse() {
+                Ok(i) => i,
+                Err(_) => return,
+            };
+            // Navigate to key
+            let next = navigate_json_field_mut(current, key, type_info);
+            let Some(arr_val) = next else { return };
+            if let Some(key_reg) = field_type_registration(type_info, key, registry) {
+                current_reg = key_reg;
+            }
+            if is_last {
+                if let Some(arr) = arr_val.as_array_mut() {
+                    if idx < arr.len() {
+                        arr[idx] = value;
+                    }
+                }
+                return;
+            }
+            current = match arr_val.get_mut(idx) {
+                Some(v) => v,
+                None => return,
+            };
+            let list_info = current_reg.type_info();
+            if let TypeInfo::List(l) = list_info {
+                if let Some(elem_reg) = registry.get(l.item_ty().id()) {
+                    current_reg = elem_reg;
+                }
+            }
+        } else {
+            if is_last {
+                set_json_field(current, segment, value, type_info);
+                return;
+            }
+            let next_reg = field_type_registration(type_info, segment, registry);
+            let Some(next) = navigate_json_field_mut(current, segment, type_info) else {
+                return;
+            };
+            current = next;
+            if let Some(nr) = next_reg {
+                current_reg = nr;
+            }
+        }
+    }
+}
+
+/// Navigate one level into a mutable JSON value.
+fn navigate_json_field_mut<'a>(
+    json: &'a mut serde_json::Value,
+    field_name: &str,
+    type_info: &TypeInfo,
+) -> Option<&'a mut serde_json::Value> {
+    match json {
+        serde_json::Value::Object(_) => json.get_mut(field_name),
+        serde_json::Value::Array(_) => {
+            let idx = if let Ok(i) = field_name.parse::<usize>() {
+                i
+            } else {
+                field_index_from_type_info(type_info, field_name)?
+            };
+            json.get_mut(idx)
+        }
+        _ => None,
+    }
+}
+
+/// Set a field value in a JSON value (handles both Object and Array).
+fn set_json_field(
+    json: &mut serde_json::Value,
+    field_name: &str,
+    value: serde_json::Value,
+    type_info: &TypeInfo,
+) {
+    match json {
+        serde_json::Value::Object(map) => {
+            map.insert(field_name.to_string(), value);
+        }
+        serde_json::Value::Array(arr) => {
+            let idx = if let Ok(i) = field_name.parse::<usize>() {
+                i
+            } else if let Some(i) = field_index_from_type_info(type_info, field_name) {
+                i
+            } else {
+                return;
+            };
+            if idx < arr.len() {
+                arr[idx] = value;
+            }
+        }
+        _ => {}
+    }
+}

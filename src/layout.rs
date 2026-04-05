@@ -185,6 +185,7 @@ fn workspace_tab_bar() -> impl Bundle {
         Node {
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
             width: percent(100),
             height: px(28.0),
             flex_shrink: 0.0,
@@ -194,8 +195,8 @@ fn workspace_tab_bar() -> impl Bundle {
         },
         BackgroundColor(tokens::TOOLBAR_BG),
         children![
-            workspace_tab("Scene Editor", ActiveWorkspace::SceneEditor, true),
-            workspace_tab("Remote Debug", ActiveWorkspace::RemoteDebug, false),
+            workspace_tab("Scene", ActiveWorkspace::SceneEditor, true),
+            workspace_tab("Remote", ActiveWorkspace::RemoteDebug, false),
         ],
     )
 }

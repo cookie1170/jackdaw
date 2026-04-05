@@ -117,17 +117,29 @@ impl EditorCommand for SetBrush {
         if let Some(mut brush) = world.get_mut::<Brush>(self.entity) {
             *brush = self.new.clone();
         }
+        sync_brush_to_ast(world, self.entity, &self.new);
     }
 
     fn undo(&mut self, world: &mut World) {
         if let Some(mut brush) = world.get_mut::<Brush>(self.entity) {
             *brush = self.old.clone();
         }
+        sync_brush_to_ast(world, self.entity, &self.old);
     }
 
     fn description(&self) -> &str {
         &self.label
     }
+}
+
+/// Serialize a Brush component to JSON and store it in the AST.
+pub fn sync_brush_to_ast(world: &mut World, entity: Entity, brush: &Brush) {
+    crate::commands::sync_component_to_ast(
+        world,
+        entity,
+        "jackdaw_jsn::types::brush::Brush",
+        brush,
+    );
 }
 
 impl EditorMeta for Brush {
