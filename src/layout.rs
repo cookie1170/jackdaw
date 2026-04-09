@@ -207,7 +207,7 @@ pub fn editor_layout(icon_font: &IconFont) -> impl Bundle {
     )
 }
 
-/// Integrated window header: [menu bar items] [scene tabs] [controls]
+/// Integrated window header: \[menu bar items\] \[scene tabs\] \[controls\]
 fn window_header() -> impl Bundle {
     (
         EditorEntity,
