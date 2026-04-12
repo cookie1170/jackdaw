@@ -255,12 +255,9 @@ pub fn auto_bind_player(
     bound.mode = BindMode::Authored;
 }
 
-/// Walk a blend graph's single `ClipRef → Output` connection to
-/// find the `Entity` of the clip being passed through. Matches the
-/// MVP scope of [`compile_blend_graphs`] - only "one clip ref, one
-/// output, one connection between them" is recognized. Returns
-/// `None` if the graph is empty, incomplete, or uses a topology the
-/// compile step can't handle yet.
+/// Walk a blend graph's single ClipRef -> Output connection to find
+/// the clip being passed through. Only recognizes "one clip ref, one
+/// output, one connection." Returns `None` if incomplete.
 fn resolve_blend_graph_passthrough_source(
     blend_graph_entity: Entity,
     children_q: &Query<&Children>,

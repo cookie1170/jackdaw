@@ -353,9 +353,8 @@ fn on_header_new_blend_graph(
     });
 }
 
-/// Observer: the clip selector combobox changed. Read the selected
-/// index, map it to a clip entity via [`TimelineClipSelector`]'s
-/// stored list, and switch `SelectedClip` to that entity.
+/// Clip selector combobox changed. Maps the selected index to a
+/// clip entity and switches `SelectedClip`.
 fn on_clip_selector_change(
     event: On<jackdaw_feathers::combobox::ComboBoxChangeEvent>,
     selectors: Query<&jackdaw_animation::TimelineClipSelector>,
