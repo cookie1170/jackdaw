@@ -216,8 +216,18 @@ pub struct JsnMetadata {
 ///   }
 /// }
 /// ```
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct JsnAssets(pub HashMap<String, HashMap<String, serde_json::Value>>);
+
+impl<'de> serde::Deserialize<'de> for JsnAssets {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match serde_json::from_value(value) {
+            Ok(map) => Ok(JsnAssets(map)),
+            Err(_) => Ok(JsnAssets(HashMap::new())),
+        }
+    }
+}
 
 /// Reserved for editor-specific state. Currently unused.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
