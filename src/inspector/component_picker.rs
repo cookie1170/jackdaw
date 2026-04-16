@@ -348,8 +348,7 @@ pub(crate) fn on_add_component_button_click(
                                 cmd.execute(world);
                                 let mut history =
                                     world.resource_mut::<crate::commands::CommandHistory>();
-                                history.undo_stack.push(cmd);
-                                history.redo_stack.clear();
+                                history.push_executed(cmd);
 
                                 // Signal the inspector to rebuild
                                 world.entity_mut(source_entity).insert(InspectorDirty);

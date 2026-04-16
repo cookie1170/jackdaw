@@ -15,6 +15,7 @@ pub mod inspector;
 pub mod keybind_settings;
 pub mod keybinds;
 pub use inspector::{EditorMeta, ReflectEditorMeta};
+pub mod extension_loader;
 pub mod layout;
 pub mod material_browser;
 pub mod material_preview;
@@ -147,6 +148,7 @@ impl Plugin for EditorPlugin {
             .add_plugins(jackdaw_node_graph::NodeGraphPlugin)
             .add_plugins(jackdaw_animation::AnimationPlugin)
             .add_plugins(jackdaw_panels::DockPlugin)
+            .add_plugins(extension_loader::ExtensionLoaderPlugin)
             .add_systems(
                 Startup,
                 (
@@ -205,6 +207,8 @@ impl Plugin for EditorPlugin {
             .add_observer(on_clip_name_commit)
             .add_observer(on_duration_input_commit)
             .add_observer(on_timeline_keyframe_click);
+
+        jackdaw_api::load_static_extension(app, &sample_extension::SampleExtension);
     }
 }
 
@@ -896,8 +900,7 @@ fn handle_keyframe_delete_intercept(world: &mut World) {
         label: "Delete keyframes".to_string(),
     };
     let mut history = world.resource_mut::<jackdaw_commands::CommandHistory>();
-    history.undo_stack.push(Box::new(group));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(group));
 }
 
 /// Typed, undo-aware spawn command for animation keyframes. Mirror of
@@ -1336,8 +1339,7 @@ fn handle_keyframe_paste(world: &mut World) {
         label: "Paste keyframes".to_string(),
     };
     let mut history = world.resource_mut::<jackdaw_commands::CommandHistory>();
-    history.undo_stack.push(Box::new(group));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(group));
     world
         .resource_mut::<ButtonInput<KeyCode>>()
         .clear_just_pressed(KeyCode::KeyV);
@@ -1462,6 +1464,7 @@ fn on_duration_input_commit(
                 field_path: "duration".to_string(),
                 old_value: old_json,
                 new_value: new_json,
+                was_derived: false,
             }),
             world,
         );
@@ -1560,6 +1563,51 @@ fn populate_menu(world: &mut World) {
     let Some(menu_bar_entity) = menu_bar_entity else {
         return;
     };
+
+    // Collect window entries from WindowRegistry grouped by default_area.
+    // Built-in windows have a default_area, extension windows don't (empty string).
+    let window_registry = world.resource::<jackdaw_panels::WindowRegistry>();
+    let mut by_area: std::collections::BTreeMap<String, Vec<(String, String)>> =
+        std::collections::BTreeMap::new();
+    for descriptor in window_registry.iter() {
+        let area_key = if descriptor.default_area.is_empty() {
+            "zz_extensions".to_string()
+        } else {
+            descriptor.default_area.clone()
+        };
+        by_area.entry(area_key).or_default().push((
+            format!("window.open:{}", descriptor.id),
+            descriptor.name.clone(),
+        ));
+    }
+    // Build the Window menu with separators between area groups, followed
+    // by Reset Layout at the bottom.
+    let mut window_entries: Vec<(String, String)> = Vec::new();
+    let area_order = ["left", "bottom_dock", "right_sidebar", "zz_extensions"];
+    let mut first = true;
+    for area in area_order {
+        let Some(entries) = by_area.get(area) else {
+            continue;
+        };
+        if !first {
+            window_entries.push(("---".to_string(), String::new()));
+        }
+        first = false;
+        for (id, name) in entries {
+            window_entries.push((id.clone(), name.clone()));
+        }
+    }
+    if !window_entries.is_empty() {
+        window_entries.push(("---".to_string(), String::new()));
+    }
+    window_entries.push((
+        "window.reset_layout".to_string(),
+        "Reset Layout".to_string(),
+    ));
+    let window_entries_refs: Vec<(&str, &str)> = window_entries
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     jackdaw_feathers::menu_bar::populate_menu_bar(
         world,
         menu_bar_entity,
@@ -1628,25 +1676,7 @@ fn populate_menu(world: &mut World) {
                     ("add.prefab", "Prefab..."),
                 ],
             ),
-            (
-                "Window",
-                vec![
-                    ("window.hierarchy", "Scene Tree"),
-                    ("window.import", "Import"),
-                    ("window.project_files", "Project Files"),
-                    ("---", ""),
-                    ("window.assets", "Assets"),
-                    ("window.timeline", "Timeline"),
-                    ("window.terminal", "Terminal"),
-                    ("---", ""),
-                    ("window.components", "Components"),
-                    ("window.materials", "Materials"),
-                    ("window.resources", "Resources"),
-                    ("window.systems", "Systems"),
-                    ("---", ""),
-                    ("window.reset_layout", "Reset Layout"),
-                ],
-            ),
+            ("Window", window_entries_refs),
         ],
     );
 }
@@ -1887,23 +1917,30 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
         }
         "add.navmesh" => {
             commands.queue(|world: &mut World| {
-                let mut system_state: SystemState<(Commands, ResMut<Selection>)> =
-                    SystemState::new(world);
-                let (mut commands, mut selection) = system_state.get_mut(world);
-                let entity = navmesh::spawn_navmesh_entity(&mut commands);
-                selection.select_single(&mut commands, entity);
-                system_state.apply(world);
+                spawn_undoable(world, "Add Navmesh Region", |world| {
+                    let mut system_state: SystemState<(Commands, ResMut<Selection>)> =
+                        SystemState::new(world);
+                    let (mut commands, mut selection) = system_state.get_mut(world);
+                    let entity = navmesh::spawn_navmesh_entity(&mut commands);
+                    selection.select_single(&mut commands, entity);
+                    system_state.apply(world);
+                    scene_io::register_entity_in_ast(world, entity);
+                    entity
+                });
             });
         }
         "add.terrain" => {
             commands.queue(|world: &mut World| {
-                let mut system_state: SystemState<(Commands, ResMut<Selection>)> =
-                    SystemState::new(world);
-                let (mut commands, mut selection) = system_state.get_mut(world);
-                let entity = terrain::spawn_terrain_entity(&mut commands);
-                selection.select_single(&mut commands, entity);
-                system_state.apply(world);
-                scene_io::register_entity_in_ast(world, entity);
+                spawn_undoable(world, "Add Terrain", |world| {
+                    let mut system_state: SystemState<(Commands, ResMut<Selection>)> =
+                        SystemState::new(world);
+                    let (mut commands, mut selection) = system_state.get_mut(world);
+                    let entity = terrain::spawn_terrain_entity(&mut commands);
+                    selection.select_single(&mut commands, entity);
+                    system_state.apply(world);
+                    scene_io::register_entity_in_ast(world, entity);
+                    entity
+                });
             });
         }
         "add.prefab" => {
@@ -1919,21 +1956,8 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
                 return;
             }
 
-            let window_id = match action {
-                "window.hierarchy" => Some("jackdaw.hierarchy"),
-                "window.import" => Some("jackdaw.import"),
-                "window.project_files" => Some("jackdaw.project_files"),
-                "window.assets" => Some("jackdaw.assets"),
-                "window.timeline" => Some("jackdaw.timeline"),
-                "window.terminal" => Some("jackdaw.terminal"),
-                "window.components" => Some("jackdaw.inspector.components"),
-                "window.materials" => Some("jackdaw.inspector.materials"),
-                "window.resources" => Some("jackdaw.inspector.resources"),
-                "window.systems" => Some("jackdaw.inspector.systems"),
-                _ => None,
-            };
-            if let Some(id) = window_id {
-                let id = id.to_string();
+            if let Some(window_id) = action.strip_prefix("window.open:") {
+                let id = window_id.to_string();
                 commands.queue(move |world: &mut World| {
                     open_window_in_default_area(world, &id);
                 });
@@ -1941,6 +1965,23 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
         }
         _ => {}
     }
+}
+
+/// Wrap an entity-spawning closure in a `SpawnEntity` command so Ctrl+Z can undo it.
+fn spawn_undoable<F>(world: &mut World, label: &str, spawn: F)
+where
+    F: Fn(&mut World) -> Entity + Send + Sync + 'static,
+{
+    let mut cmd: Box<dyn jackdaw_commands::EditorCommand> =
+        Box::new(commands::SpawnEntity {
+            spawned: None,
+            spawn_fn: Box::new(spawn),
+            label: label.to_string(),
+        });
+    cmd.execute(world);
+    world
+        .resource_mut::<commands::CommandHistory>()
+        .push_executed(cmd);
 }
 
 fn cleanup_editor(world: &mut World) {
@@ -2327,7 +2368,15 @@ fn open_window_in_default_area(world: &mut World, window_id: &str) {
 
     let target_leaf = {
         let tree = world.resource::<DockTree>();
-        let Some(root) = tree.anchor(&default_area) else {
+        // If window has a default_area, place it there. Otherwise (extension
+        // windows have no default), fall back to the first available anchor
+        // so the user can reposition it from there.
+        let root = if default_area.is_empty() {
+            tree.iter_anchors().next().map(|(_, id)| id)
+        } else {
+            tree.anchor(&default_area)
+        };
+        let Some(root) = root else {
             return;
         };
         tree.leaves_under(root).first().map(|(id, _)| *id)

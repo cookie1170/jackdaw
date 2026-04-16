@@ -408,8 +408,7 @@ fn modal_confirm(
             old_transform: active.start_transform,
             new_transform: *transform,
         };
-        history.undo_stack.push(Box::new(cmd));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(cmd));
     }
 
     modal.active = None;
@@ -716,8 +715,7 @@ fn viewport_drag_finish(
             old_transform: active.start_transform,
             new_transform: *transform,
         };
-        history.undo_stack.push(Box::new(cmd));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(cmd));
     }
 
     // Release cursor confinement

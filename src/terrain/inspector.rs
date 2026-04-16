@@ -680,8 +680,7 @@ fn on_generate_clicked(
         new_heights,
         label: "Generate Terrain".to_string(),
     };
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
 }
 
 fn on_erode_clicked(
@@ -711,6 +710,5 @@ fn on_erode_clicked(
         new_heights: heights,
         label: "Erode Terrain".to_string(),
     };
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
 }

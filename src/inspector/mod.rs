@@ -147,11 +147,13 @@ impl Plugin for InspectorPlugin {
 }
 
 /// Handle TextEditCommitEvent for Name field inputs.
+/// Pushes a `SetJsnField` command so the rename can be undone.
 fn on_name_field_commit(
     event: On<jackdaw_feathers::text_edit::TextEditCommitEvent>,
     name_inputs: Query<&NameFieldInput>,
     child_of_query: Query<&ChildOf>,
-    mut names: Query<&mut Name>,
+    names: Query<&Name>,
+    mut commands: Commands,
 ) {
     // Walk up from the committed entity to find a NameFieldInput
     let mut current = event.entity;
@@ -171,9 +173,31 @@ fn on_name_field_commit(
         return;
     };
 
-    if let Ok(mut name) = names.get_mut(source_entity) {
-        *name = Name::new(event.text.clone());
+    let old_name = names
+        .get(source_entity)
+        .map(|n| n.as_str().to_string())
+        .unwrap_or_default();
+    let new_name = event.text.clone();
+
+    if old_name == new_name {
+        return;
     }
+
+    commands.queue(move |world: &mut World| {
+        let cmd = crate::commands::SetJsnField {
+            entity: source_entity,
+            type_path: "bevy_ecs::name::Name".to_string(),
+            field_path: String::new(),
+            old_value: serde_json::Value::String(old_name),
+            new_value: serde_json::Value::String(new_name),
+            was_derived: false,
+        };
+        let mut cmd: Box<dyn jackdaw_commands::EditorCommand> = Box::new(cmd);
+        cmd.execute(world);
+        world
+            .resource_mut::<crate::commands::CommandHistory>()
+            .push_executed(cmd);
+    });
 }
 
 #[derive(Component)]

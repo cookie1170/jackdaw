@@ -760,8 +760,7 @@ fn apply_brush_face_field(
         new: brush.clone(),
         label: "Edit face UV".to_string(),
     };
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
 }
 
 pub(crate) fn handle_clear_material(
@@ -798,8 +797,7 @@ pub(crate) fn handle_clear_material(
         new: brush.clone(),
         label: "Clear material".to_string(),
     };
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
     commands.entity(brush_entity).insert(super::InspectorDirty);
 }
 
@@ -837,8 +835,7 @@ pub(crate) fn handle_clear_texture(
         new: brush.clone(),
         label: "Clear texture".to_string(),
     };
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
     commands.entity(brush_entity).insert(super::InspectorDirty);
 }
 
@@ -883,8 +880,7 @@ pub(crate) fn handle_apply_texture_to_all(
         new: brush.clone(),
         label: "Apply material to all faces".to_string(),
     };
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
     commands.entity(brush_entity).insert(super::InspectorDirty);
 }
 
@@ -922,8 +918,7 @@ pub(crate) fn handle_uv_scale_preset(
         new: brush.clone(),
         label: "Set UV scale preset".to_string(),
     };
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
 }
 
 pub(crate) fn handle_clear_material_from_brush(
@@ -951,6 +946,7 @@ pub(crate) fn handle_clear_material_from_brush(
         })
         .collect();
 
+    let mut group_commands: Vec<Box<dyn jackdaw_commands::EditorCommand>> = Vec::new();
     for entity in targets {
         if let Ok(mut brush) = brushes.get_mut(entity) {
             let has_any_material = brush.faces.iter().any(|f| f.material != Handle::default());
@@ -967,9 +963,14 @@ pub(crate) fn handle_clear_material_from_brush(
                 new: brush.clone(),
                 label: "Clear all materials".to_string(),
             };
-            history.undo_stack.push(Box::new(cmd));
-            history.redo_stack.clear();
+            group_commands.push(Box::new(cmd));
             commands.entity(entity).insert(super::InspectorDirty);
         }
+    }
+    if !group_commands.is_empty() {
+        history.push_executed(Box::new(jackdaw_commands::CommandGroup {
+            commands: group_commands,
+            label: "Clear all materials".to_string(),
+        }));
     }
 }

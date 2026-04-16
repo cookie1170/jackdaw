@@ -232,8 +232,7 @@ fn terrain_sculpt_interaction(
             new_heights: terrain.heights.clone(),
             label: format!("Terrain {:?}", tool),
         };
-        history.undo_stack.push(Box::new(cmd));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(cmd));
     }
 }
 

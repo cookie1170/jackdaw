@@ -988,14 +988,14 @@ fn on_visibility_toggled(
         field_path: String::new(),
         old_value: old_json,
         new_value: new_json,
+        was_derived: false,
     };
 
     commands.queue(move |world: &mut World| {
         let mut cmd = Box::new(cmd);
         cmd.execute(world);
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(cmd);
-        history.redo_stack.clear();
+        history.push_executed(cmd);
     });
 }
 
@@ -1227,12 +1227,12 @@ fn on_tree_row_renamed(event: On<TreeRowRenamed>, mut commands: Commands, names:
             field_path: String::new(),
             old_value: serde_json::Value::String(old_name),
             new_value: serde_json::Value::String(new_name),
+            was_derived: false,
         };
         let mut cmd = Box::new(cmd);
         cmd.execute(world);
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(cmd);
-        history.redo_stack.clear();
+        history.push_executed(cmd);
     });
 }
 

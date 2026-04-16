@@ -1,0 +1,15 @@
+[package]
+name = "jackdaw_api"
+version = "0.3.1"
+edition = "2024"
+description = "Public API for Jackdaw editor extensions"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jbuehler23/jackdaw"
+
+[dependencies]
+bevy.workspace = true
+jackdaw_panels.workspace = true
+jackdaw_commands.workspace = true
+
+[lints]
+workspace = true

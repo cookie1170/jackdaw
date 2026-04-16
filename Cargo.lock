@@ -4437,6 +4437,7 @@ dependencies = [
  "dirs",
  "ehttp",
  "jackdaw_animation",
+ "jackdaw_api",
  "jackdaw_avian_integration",
  "jackdaw_camera",
  "jackdaw_commands",
@@ -4453,6 +4454,7 @@ dependencies = [
  "pathdiff",
  "regex",
  "rfd",
+ "sample_extension",
  "serde",
  "serde_json",
 ]
@@ -4467,6 +4469,15 @@ dependencies = [
  "jackdaw_node_graph",
  "lucide-icons",
  "serde",
+]
+
+[[package]]
+name = "jackdaw_api"
+version = "0.3.1"
+dependencies = [
+ "bevy",
+ "jackdaw_commands",
+ "jackdaw_panels",
 ]
 
 [[package]]
@@ -6483,6 +6494,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "sample_extension"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "jackdaw_api",
+ "jackdaw_commands",
 ]
 
 [[package]]

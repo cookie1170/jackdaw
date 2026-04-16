@@ -170,12 +170,26 @@ fn apply_last_material(entity: Entity) -> impl FnOnce(&mut World) {
 }
 
 /// World-access version of `create_entity`. Used from menu actions and other deferred contexts.
+/// Pushes a `SpawnEntity` command so the addition can be undone.
 pub fn create_entity_in_world(world: &mut World, template: EntityTemplate) {
-    let mut system_state: SystemState<(Commands, ResMut<Selection>)> = SystemState::new(world);
-    let (mut commands, mut selection) = system_state.get_mut(world);
-    let entity = create_entity(&mut commands, template, &mut selection);
-    system_state.apply(world);
-    crate::scene_io::register_entity_in_ast(world, entity);
+    let label = format!("Add {}", template.label());
+    let spawn_fn = Box::new(move |world: &mut World| -> Entity {
+        let mut system_state: SystemState<(Commands, ResMut<Selection>)> =
+            SystemState::new(world);
+        let (mut commands, mut selection) = system_state.get_mut(world);
+        let entity = create_entity(&mut commands, template, &mut selection);
+        system_state.apply(world);
+        crate::scene_io::register_entity_in_ast(world, entity);
+        entity
+    });
+
+    let mut cmd: Box<dyn EditorCommand> = Box::new(crate::commands::SpawnEntity {
+        spawned: None,
+        spawn_fn,
+        label,
+    });
+    cmd.execute(world);
+    world.resource_mut::<CommandHistory>().push_executed(cmd);
 }
 
 pub fn spawn_gltf(
@@ -257,8 +271,7 @@ pub fn delete_selected(world: &mut World) {
             label: "Delete entities".to_string(),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(group));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(group));
     }
 }
 
@@ -619,8 +632,7 @@ fn reset_transform_selected(world: &mut World, reset: TransformReset) {
             label: label.to_string(),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(group));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(group));
     }
 }
 
@@ -662,8 +674,7 @@ fn nudge_selected(world: &mut World, offset: Vec3) {
             label: "Nudge".to_string(),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(group));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(group));
     }
 }
 
@@ -705,8 +716,7 @@ fn rotate_selected(world: &mut World, rotation: Quat) {
             label: "Rotate 90\u{00b0}".to_string(),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(group));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(group));
     }
 }
 
@@ -844,6 +854,7 @@ fn hide_selected(world: &mut World) {
             field_path: String::new(),
             old_value: serde_json::Value::String(format!("{current:?}")),
             new_value: serde_json::Value::String(format!("{new_visibility:?}")),
+            was_derived: false,
         };
         cmd.execute(world);
         cmds.push(Box::new(cmd));
@@ -855,8 +866,7 @@ fn hide_selected(world: &mut World) {
             label: "Toggle visibility".to_string(),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(group));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(group));
     }
 }
 
@@ -884,6 +894,7 @@ fn unhide_all_entities(world: &mut World) {
             field_path: String::new(),
             old_value: serde_json::Value::String("Hidden".to_string()),
             new_value: serde_json::Value::String("Inherited".to_string()),
+            was_derived: false,
         };
         cmd.execute(world);
         cmds.push(Box::new(cmd));
@@ -895,8 +906,7 @@ fn unhide_all_entities(world: &mut World) {
             label: "Unhide all".to_string(),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(group));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(group));
     }
 }
 
@@ -924,6 +934,7 @@ fn hide_all_entities(world: &mut World) {
             field_path: String::new(),
             old_value: serde_json::Value::String(format!("{current:?}")),
             new_value: serde_json::Value::String("Hidden".to_string()),
+            was_derived: false,
         };
         cmd.execute(world);
         cmds.push(Box::new(cmd));
@@ -935,8 +946,7 @@ fn hide_all_entities(world: &mut World) {
             label: "Hide all".to_string(),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(group));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(group));
     }
 }
 

@@ -34,6 +34,11 @@ impl CommandHistory {
             self.undo_stack.push(command);
         }
     }
+
+    pub fn push_executed(&mut self, command: Box<dyn EditorCommand>) {
+        self.undo_stack.push(command);
+        self.redo_stack.clear();
+    }
 }
 
 pub struct CommandGroup {

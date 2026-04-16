@@ -775,8 +775,7 @@ fn handle_apply_texture(
                     new: brush.clone(),
                     label: "Apply texture".into(),
                 };
-                history.undo_stack.push(Box::new(cmd));
-                history.redo_stack.clear();
+                history.push_executed(Box::new(cmd));
                 commands
                     .entity(entity)
                     .insert(crate::inspector::InspectorDirty);
@@ -798,6 +797,7 @@ fn handle_apply_texture(
                 }
             })
             .collect();
+        let mut group_commands: Vec<Box<dyn jackdaw_commands::EditorCommand>> = Vec::new();
         for entity in targets {
             if let Ok(mut brush) = brushes.get_mut(entity) {
                 let old = brush.clone();
@@ -810,12 +810,17 @@ fn handle_apply_texture(
                     new: brush.clone(),
                     label: "Apply texture".into(),
                 };
-                history.undo_stack.push(Box::new(cmd));
-                history.redo_stack.clear();
+                group_commands.push(Box::new(cmd));
                 commands
                     .entity(entity)
                     .insert(crate::inspector::InspectorDirty);
             }
+        }
+        if !group_commands.is_empty() {
+            history.push_executed(Box::new(jackdaw_commands::CommandGroup {
+                commands: group_commands,
+                label: "Apply texture".into(),
+            }));
         }
     }
 
