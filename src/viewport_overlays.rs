@@ -276,11 +276,7 @@ pub(crate) fn collect_descendant_mesh_world_vertices(
     }
 }
 
-/// Color for an entity marker gizmo.
-///
-/// Selected entities use the bright bounding-box color; unselected
-/// entities use a dim variant that stays visible without overpowering
-/// the active selection.
+/// Bright bounding-box color when selected, dim marker color otherwise.
 fn marker_color(is_selected: bool) -> Color {
     if is_selected {
         colors::SELECTION_BBOX
@@ -289,12 +285,9 @@ fn marker_color(is_selected: bool) -> Color {
     }
 }
 
-/// Point light: three axis-aligned circles at range radius. Drawn for
-/// every scene-visible point light so invisible lights are still
-/// findable in the viewport (bright when selected, dim otherwise).
-///
-/// The `Without<EditorEntity>` filter keeps editor-local lights, such as
-/// the material-preview scene's lights, out of the main viewport.
+/// Point light: three axis-aligned circles at range radius. The
+/// `Without<EditorEntity>` filter keeps editor-local lights (e.g. the
+/// material-preview scene) out of the main viewport.
 fn draw_point_light_gizmo(
     mut gizmos: Gizmos,
     settings: Res<OverlaySettings>,
@@ -332,8 +325,7 @@ fn draw_point_light_gizmo(
     }
 }
 
-/// Spot light: cone from outer_angle + range. Drawn for all scene-visible
-/// spot lights.
+/// Spot light cone: `outer_angle` and `range`.
 fn draw_spot_light_gizmo(
     mut gizmos: Gizmos,
     settings: Res<OverlaySettings>,
@@ -375,8 +367,7 @@ fn draw_spot_light_gizmo(
     }
 }
 
-/// Directional light: arrow along forward direction. Drawn for every
-/// scene-visible directional light.
+/// Directional light: arrow along the forward direction.
 fn draw_dir_light_gizmo(
     mut gizmos: Gizmos,
     settings: Res<OverlaySettings>,
@@ -399,11 +390,8 @@ fn draw_dir_light_gizmo(
     }
 }
 
-/// Camera frustum. Drawn for every scene-authored camera.
-///
-/// The `Without<EditorEntity>` filter excludes the main viewport camera
-/// and the material-preview camera; those are editor-local and should
-/// not surface as selectable scene content.
+/// Camera frustum. `Without<EditorEntity>` excludes the main viewport
+/// camera and the material-preview camera.
 fn draw_camera_gizmo(
     mut gizmos: Gizmos,
     settings: Res<OverlaySettings>,
@@ -453,11 +441,8 @@ fn draw_camera_gizmo(
     }
 }
 
-/// Fallback marker for entities with a `Transform` but no visible
-/// geometry and no specialised gizmo (empty entities, tag entities, and
-/// the like). Draws a small wireframe cube around the origin so the
-/// entity is findable in the viewport and selectable from the scene
-/// tree.
+/// Fallback marker for empty / tag entities: small wireframe cube at
+/// the origin so the entity is findable and selectable.
 fn draw_empty_entity_marker(
     mut gizmos: Gizmos,
     settings: Res<OverlaySettings>,
@@ -485,9 +470,8 @@ fn draw_empty_entity_marker(
     if !settings.show_bounding_boxes {
         return;
     }
-    // Fixed 0.5-unit cube so the marker stays visible regardless of
-    // camera distance. This is not the world AABB of the entity: there
-    // is no geometry to compute a bound from.
+    // Fixed 0.5-unit cube so the marker is visible at any camera
+    // distance. Not the world AABB: nothing to compute one from.
     const SIZE: f32 = 0.25;
     for (_entity, tf, inherited_vis, selected) in &query {
         if !inherited_vis.get() {

@@ -1,12 +1,6 @@
-//! Sample extension demonstrating the jackdaw_api v2 surface.
-//!
-//! Registers:
-//! - A "Hello Extension" dock window (plain UI, no input).
-//! - A `HelloOp` operator bound to `F9` via a BEI context owned by this plugin.
-//!
-//! Toggling this extension off via `File > Extensions...` should make both
-//! the window entry disappear from the add-window popup and the keybind go
-//! dead.
+//! Sample extension. Registers a dock window and a `HelloOp` operator
+//! bound to F9. Disabling it in File > Extensions should remove the
+//! window entry and kill the keybind.
 
 use std::sync::Arc;
 
@@ -27,7 +21,6 @@ impl JackdawExtension for SampleExtension {
     }
 
     fn register(&self, ctx: &mut ExtensionContext) {
-        // 1. Register the dock window (same behavior as the v1 sample).
         ctx.register_window(WindowDescriptor {
             id: "sample.hello".into(),
             name: "Hello Extension".into(),
@@ -37,16 +30,8 @@ impl JackdawExtension for SampleExtension {
             build: Arc::new(build_hello_panel),
         });
 
-        // 2. Register the operator. This registers the execute system,
-        // stores an OperatorEntity as a child of the extension entity,
-        // and spawns a Fire<HelloOp> observer that dispatches it.
         ctx.register_operator::<HelloOp>();
 
-        // 3. Spawn a BEI context entity with an Action<HelloOp> bound to
-        // F9. The context *type* was registered once at startup via
-        // `register_input_contexts`; this is just the runtime entity that
-        // holds the action bindings. Spawned via ctx.spawn so it's a
-        // child of the extension entity (cleaned up on disable).
         ctx.spawn((
             SampleContext,
             actions!(SampleContext[
@@ -60,11 +45,9 @@ fn build_hello_panel(world: &mut World, parent: Entity) {
     world.spawn((ChildOf(parent), Text::new("Hello from an extension!")));
 }
 
-/// BEI input context. One per extension.
 #[derive(Component, Default)]
 pub struct SampleContext;
 
-/// Operator bound to F9. Emits a log message.
 #[derive(Default, InputAction)]
 #[action_output(bool)]
 pub struct HelloOp;

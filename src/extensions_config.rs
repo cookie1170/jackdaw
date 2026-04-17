@@ -1,20 +1,6 @@
-//! Persistence for the "enabled extensions" list.
-//!
-//! Stores a JSON file at `~/.config/jackdaw/extensions.json`:
-//!
-//! ```json
-//! {
-//!   "enabled": [
-//!     "core_windows",
-//!     "inspector",
-//!     "sample"
-//!   ]
-//! }
-//! ```
-//!
-//! Read once on editor startup to decide which entries in the
-//! [`ExtensionCatalog`] to enable. Rewritten whenever the user toggles
-//! an extension in the Extensions dialog.
+//! Persistence for the enabled-extensions list at
+//! `~/.config/jackdaw/extensions.json`. Read on startup, rewritten
+//! whenever the user toggles an extension.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -58,19 +44,12 @@ pub fn write_enabled_list(enabled: &[String]) {
     }
 }
 
-/// Resolve which catalog entries should be enabled on startup given the
-/// persisted list, if any. Called by the Startup system in `lib.rs`.
+/// Resolve which catalog entries to enable on startup.
 ///
-/// Includes a one-time upgrade migration: if the saved list predates the
-/// built-in feature-area extensions (none of its entries are built-ins),
-/// every catalog entry is enabled. The next toggle rewrites the file
-/// with the full list. Once the file records at least one built-in, the
-/// user's recorded preferences are trusted exactly as written, so an
-/// intentional disable of `inspector` stays disabled across restarts.
-///
-/// "Which names are built-ins" comes from the catalog itself: each
-/// extension declares its [`ExtensionKind`] on the `JackdawExtension`
-/// trait and registration captures it.
+/// Pre-dogfood files list none of the built-ins; fall back to enabling
+/// everything so the editor stays usable until the next toggle rewrites
+/// the file. Files that already record at least one built-in are
+/// trusted exactly as written.
 pub fn resolve_enabled_list(world: &World) -> Vec<String> {
     let catalog = world.resource::<ExtensionCatalog>();
     let available: Vec<String> = catalog.iter().map(|s| s.to_string()).collect();
@@ -83,10 +62,6 @@ pub fn resolve_enabled_list(world: &World) -> Vec<String> {
     match read_enabled_list() {
         Some(list) => {
             let on_disk: HashSet<String> = list.into_iter().collect();
-            // Pre-dogfood files contain none of the built-in names.
-            // Treat those as legacy and fall back to "enable everything"
-            // so the editor stays usable. The next toggle rewrites the
-            // file with the complete list.
             let has_any_builtin = builtins.iter().any(|name| on_disk.contains(name));
             if !has_any_builtin {
                 return available;
@@ -96,7 +71,7 @@ pub fn resolve_enabled_list(world: &World) -> Vec<String> {
                 .filter(|n| on_disk.contains(n))
                 .collect()
         }
-        None => available, // first run: enable everything
+        None => available,
     }
 }
 

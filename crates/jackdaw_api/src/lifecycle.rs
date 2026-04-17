@@ -242,10 +242,6 @@ where
         .register(name, kind, ctor);
 }
 
-// ============================================================================
-// Dispatch
-// ============================================================================
-
 use crate::operator::OperatorCommandBuffer;
 use jackdaw_commands::{CommandGroup, CommandHistory};
 
@@ -373,12 +369,8 @@ fn finalize_modal(world: &mut World, commit: bool) {
     finalize_operator_session(world, &label, commit);
 }
 
-// ============================================================================
-// Loading / unloading / enable / disable
-// ============================================================================
-
-/// Unload an extension. Just despawns the root entity; the cascade + cleanup
-/// observers take care of the rest.
+/// Unload an extension. Despawns the root entity; the cascade and
+/// cleanup observers handle the rest.
 pub fn unload_extension(world: &mut World, ext_entity: Entity) {
     let ext_name = world
         .get::<Extension>(ext_entity)
@@ -386,7 +378,6 @@ pub fn unload_extension(world: &mut World, ext_entity: Entity) {
         .unwrap_or_default();
     info!("Unloading extension: {}", ext_name);
 
-    // Invoke the optional `unregister` hook before despawning.
     if let Some(stored) = world
         .entity_mut(ext_entity)
         .take::<crate::StoredExtension>()
@@ -399,9 +390,8 @@ pub fn unload_extension(world: &mut World, ext_entity: Entity) {
 }
 
 /// Enable a named extension via the catalog. Returns the new extension
-/// entity if the extension existed in the catalog and wasn't already loaded.
+/// entity, or `None` if the name is unknown or already loaded.
 pub fn enable_extension(world: &mut World, name: &str) -> Option<Entity> {
-    // Short-circuit if already loaded.
     {
         let mut query = world.query::<&Extension>();
         if query.iter(world).any(|e| e.name == name) {
@@ -410,12 +400,10 @@ pub fn enable_extension(world: &mut World, name: &str) -> Option<Entity> {
     }
 
     let extension = world.resource::<ExtensionCatalog>().construct(name)?;
-
     Some(crate::load_static_extension(world, extension))
 }
 
-/// Disable a named extension. Finds the matching `Extension` entity and
-/// despawns it.
+/// Disable a named extension by despawning its root entity.
 pub fn disable_extension(world: &mut World, name: &str) -> bool {
     let mut query = world.query::<(Entity, &Extension)>();
     let Some(ext_entity) = query
@@ -429,11 +417,7 @@ pub fn disable_extension(world: &mut World, name: &str) -> bool {
     true
 }
 
-// ============================================================================
-// Cleanup observers. Added by `ExtensionLoaderPlugin`.
-// ============================================================================
-
-/// Observer: keep `OperatorIndex` in sync on add.
+/// Keep [`OperatorIndex`] in sync when an operator entity is spawned.
 pub fn index_operator_on_add(
     trigger: On<Add, OperatorEntity>,
     operators: Query<&OperatorEntity>,
@@ -444,9 +428,9 @@ pub fn index_operator_on_add(
     }
 }
 
-/// Observer: keep `OperatorIndex` in sync on remove. Also unregister the
-/// operator's Bevy `SystemId`s so they don't leak across enable/disable
-/// cycles.
+/// Keep [`OperatorIndex`] in sync and free the operator's `SystemId`s
+/// when its entity is removed, so they don't leak across enable /
+/// disable cycles.
 pub fn deindex_and_cleanup_operator_on_remove(
     trigger: On<Remove, OperatorEntity>,
     operators: Query<&OperatorEntity>,
@@ -470,10 +454,10 @@ pub fn deindex_and_cleanup_operator_on_remove(
     });
 }
 
-/// Observer: unregister a dock window from `WindowRegistry` when its
-/// `RegisteredWindow` marker entity despawns. Also removes any docked
-/// instances of the window from the live `DockTree` and every workspace's
-/// stored tree so the UI actually reflects the disable.
+/// Unregister a dock window from [`jackdaw_panels::WindowRegistry`] and
+/// purge it from the live dock tree and every stored workspace tree when
+/// its marker entity despawns, so disabling an extension visibly removes
+/// its windows.
 pub fn cleanup_window_on_remove(
     trigger: On<Remove, RegisteredWindow>,
     windows: Query<&RegisteredWindow>,
@@ -486,17 +470,13 @@ pub fn cleanup_window_on_remove(
     };
     info!("Unregistering window: {}", w.id);
     registry.unregister(&w.id);
-    // Remove from the live tree so any currently-docked instance vanishes.
     dock_tree.remove_window(&w.id);
-    // And from each stored workspace tree so switching workspaces doesn't
-    // resurrect it.
     for workspace in workspaces.workspaces.iter_mut() {
         workspace.tree.remove_window(&w.id);
     }
 }
 
-/// Observer: unregister a workspace when its `RegisteredWorkspace` marker
-/// entity despawns.
+/// Unregister a workspace when its marker entity despawns.
 pub fn cleanup_workspace_on_remove(
     trigger: On<Remove, RegisteredWorkspace>,
     workspaces: Query<&RegisteredWorkspace>,
@@ -507,8 +487,8 @@ pub fn cleanup_workspace_on_remove(
     }
 }
 
-/// Observer: remove a panel extension section from the registry when its
-/// marker entity despawns.
+/// Remove a panel extension section from the registry when its marker
+/// entity despawns.
 pub fn cleanup_panel_extension_on_remove(
     trigger: On<Remove, RegisteredPanelExtension>,
     registrations: Query<&RegisteredPanelExtension>,
@@ -519,9 +499,9 @@ pub fn cleanup_panel_extension_on_remove(
     }
 }
 
-/// Logs the menu entry on add. Actual menu rebuilds are driven by a
-/// separate flag resource in the main crate (`MenuBarDirty`) because this
-/// crate doesn't know about the concrete menu-bar implementation.
+/// Log menu-entry registrations. Actual menu rebuilds are driven by
+/// the main crate's `MenuBarDirty` flag because this crate doesn't know
+/// the menu-bar implementation.
 pub fn log_menu_entry_on_add(
     trigger: On<Add, RegisteredMenuEntry>,
     entries: Query<&RegisteredMenuEntry>,

@@ -1,17 +1,7 @@
-//! Unified "Add Entity" picker.
-//!
-//! A single list of entity templates fed from two sources:
-//!   1. Built-in shapes, lights, cameras, regions, and prefabs, declared
-//!      in [`collect_add_menu_items`].
-//!   2. Extension-contributed `RegisteredMenuEntry` rows with
-//!      `menu == "Add"`.
-//!
-//! The same list backs:
-//!   * The toolbar's **Add** menu (via [`collect_add_menu_items`]).
-//!   * The scene-tree **Add Entity** button (opens this picker).
-//!
-//! One `register_menu_entry` call from an extension surfaces its entry
-//! in every "add" surface.
+//! Unified Add Entity picker, shared by the toolbar Add menu and the
+//! scene-tree Add Entity button. Sources items from built-in templates
+//! plus extension-contributed `RegisteredMenuEntry` rows under
+//! `menu == "Add"`.
 
 use bevy::feathers::theme::ThemedText;
 use bevy::prelude::*;
@@ -21,12 +11,12 @@ use jackdaw_feathers::tokens;
 
 use std::collections::HashSet;
 
-/// Marker for the scene-tree "Add Entity" button. Wired up in `layout.rs`.
+/// Marker for the scene-tree Add Entity button.
 #[derive(Component)]
 pub struct AddEntityButton;
 
-/// Backdrop + panel root for the picker. Despawning it tears down the
-/// whole dialog.
+/// Backdrop and panel root for the picker. Despawning it tears down
+/// the whole dialog.
 #[derive(Component)]
 pub struct AddEntityPicker;
 
@@ -44,8 +34,8 @@ pub struct AddEntityPickerSectionHeader {
     pub category: String,
 }
 
-/// Semantic grouping for the built-in Add items. Orders the sections in
-/// the picker and mirrors the separator groups of the toolbar Add menu.
+/// Built-in Add items grouped by category. Order here is the order in
+/// the picker and in the toolbar Add menu.
 fn builtin_groups() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
     vec![
         (
@@ -75,8 +65,8 @@ fn builtin_groups() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
     ]
 }
 
-/// Item surfaced by the Add menu / Add Entity picker / future surfaces.
-/// `action` is the id handled by `handle_menu_action` (e.g. `"add.cube"` or
+/// One row in the Add menu or Add Entity picker. `action` is handled
+/// by `handle_menu_action` (e.g. `"add.cube"` or
 /// `"op:viewable_camera.place"`).
 #[derive(Clone)]
 pub struct AddMenuItem {
@@ -85,9 +75,8 @@ pub struct AddMenuItem {
     pub category: String,
 }
 
-/// Single source of truth for the Add menu contents. Used by both the
-/// toolbar's Add menu and the scene-tree Add Entity picker so a single
-/// extension registration surfaces in both.
+/// Shared source of truth for Add menu contents, consumed by both the
+/// toolbar Add menu and the scene-tree Add Entity picker.
 pub fn collect_add_menu_items(world: &mut World) -> Vec<AddMenuItem> {
     let mut items: Vec<AddMenuItem> = builtin_groups()
         .into_iter()
@@ -100,8 +89,8 @@ pub fn collect_add_menu_items(world: &mut World) -> Vec<AddMenuItem> {
         })
         .collect();
 
-    // Extension-contributed items. Grouped under the owning Extension's
-    // name so extension entries cluster by author in the picker.
+    // Extension items grouped by owning extension so entries cluster by
+    // author in the picker.
     let mut q = world.query::<(&jackdaw_api::RegisteredMenuEntry, Option<&ChildOf>)>();
     let mut ext_entries: Vec<(Entity, String, String)> = Vec::new();
     for (entry, parent) in q.iter(world) {
@@ -130,10 +119,9 @@ pub fn collect_add_menu_items(world: &mut World) -> Vec<AddMenuItem> {
     items
 }
 
-/// Open the Add Entity picker as a blocking centered dialog. Matches the
-/// Add Component picker's styling so the two feel of-a-piece.
+/// Open the Add Entity picker as a centered blocking dialog. Styled
+/// to match the Add Component dialog. Toggles off if already open.
 pub fn open_add_entity_picker(world: &mut World) {
-    // Toggle: close existing picker if already open.
     let existing: Vec<Entity> = world
         .query_filtered::<Entity, With<AddEntityPicker>>()
         .iter(world)
@@ -149,9 +137,8 @@ pub fn open_add_entity_picker(world: &mut World) {
 
     let items = collect_add_menu_items(world);
 
-    // Preserve the insertion order of categories so the built-in groups
-    // (Shapes → Lights → Cameras → Regions → Prefabs) render before any
-    // alphabetical extension groups.
+    // Group by category, preserving insertion order so built-in groups
+    // render before any extension groups.
     let mut grouped: Vec<(String, Vec<AddMenuItem>)> = Vec::new();
     for item in items {
         if let Some((_, entries)) = grouped.iter_mut().find(|(cat, _)| *cat == item.category) {
@@ -219,7 +206,6 @@ pub fn open_add_entity_picker(world: &mut World) {
         ))
         .id();
 
-    // Title bar.
     commands.spawn((
         Node {
             flex_direction: FlexDirection::Row,
@@ -243,7 +229,6 @@ pub fn open_add_entity_picker(world: &mut World) {
         )],
     ));
 
-    // Search.
     commands.spawn((
         AddEntityPickerSearch,
         text_edit::text_edit(
@@ -255,7 +240,6 @@ pub fn open_add_entity_picker(world: &mut World) {
         ChildOf(picker),
     ));
 
-    // Scrollable list of sections + entries.
     let list = commands
         .spawn((
             Node {
@@ -329,10 +313,9 @@ pub fn open_add_entity_picker(world: &mut World) {
                         let action = action.clone();
                         move |mut click: On<Pointer<Click>>, mut commands: Commands| {
                             click.propagate(false);
-                            // Reuse the menu-bar dispatch path so every
-                            // "add" action lands in the same place as
-                            // the toolbar Add menu. Avoids keeping two
-                            // parallel code paths in sync.
+                            // Route through the menu-bar dispatch path
+                            // so the toolbar Add menu and this picker
+                            // share one code path.
                             commands.trigger(jackdaw_widgets::menu_bar::MenuAction {
                                 action: action.clone(),
                             });
@@ -366,7 +349,6 @@ pub fn open_add_entity_picker(world: &mut World) {
                 ))
                 .id();
 
-            // Row: label + category badge.
             let row = commands
                 .spawn((
                     Node {

@@ -217,14 +217,10 @@ impl Plugin for EditorPlugin {
             .add_observer(on_duration_input_commit)
             .add_observer(on_timeline_keyframe_click);
 
-        // Register all built-in and example extensions into the
-        // catalog. `register_extension` runs each extension's one-time
-        // BEI context registration, which must happen during `build()`
-        // so BEI's `finish()` hook sees every context type and
-        // initializes the matching `ContextInstances` resource. Each
-        // extension self-classifies via `JackdawExtension::kind`:
-        // built-ins override it to `ExtensionKind::Builtin`, while
-        // examples and third-party extensions keep the default `Custom`.
+        // Register built-in and example extensions into the catalog.
+        // Runs during `build()` so BEI's `finish()` hook sees every
+        // context type. Built-ins override `kind()` to `Builtin`; the
+        // rest default to `Custom`.
         jackdaw_api::register_extension(app, "core_windows", || {
             Box::new(builtin_extensions::CoreWindowsExtension)
         });
@@ -247,25 +243,18 @@ impl Plugin for EditorPlugin {
             Box::new(viewable_camera_extension::ViewableCameraExtension)
         });
 
-        // Enable extensions on startup. Has to run AFTER every plugin's
-        // `finish()` hook: BEI initializes `ContextInstances<PreUpdate>`
-        // in `finish`, and spawning a context entity before that
-        // resource exists panics. Running this as a Startup system
-        // guarantees it fires once before the editor enters its main
-        // loop.
+        // Must run after every plugin's `finish()`: BEI initializes
+        // `ContextInstances<PreUpdate>` there, and spawning a context
+        // entity before that resource exists panics.
         app.add_systems(Startup, apply_enabled_extensions_startup);
     }
 }
 
-/// Set when an extension's windows change. A system in Update drains it
-/// and rebuilds the menu bar once per frame so multiple registrations
-/// coalesce into a single rebuild.
+/// Drained once per frame so multiple registrations coalesce into a
+/// single menu-bar rebuild.
 #[derive(Resource, Default)]
 pub struct MenuBarDirty(pub bool);
 
-/// Watches `RegisteredWindow` add/remove in observers (see
-/// `flag_menu_dirty_on_window_change`). When set, rebuilds the menu bar
-/// from the current `WindowRegistry`.
 fn rebuild_menu_if_dirty(world: &mut World) {
     if !world.resource::<MenuBarDirty>().0 {
         return;
@@ -302,11 +291,7 @@ fn flag_menu_dirty_on_menu_entry_remove(
     dirty.0 = true;
 }
 
-/// Enable every catalog entry that `resolve_enabled_list` reports as on.
-///
-/// Runs in `Startup` because Startup systems have world access, which is
-/// what `enable_extension` needs. The resolution helper handles the
-/// upgrade migration for pre-dogfood config files.
+/// Enable every catalog entry `resolve_enabled_list` reports as on.
 fn apply_enabled_extensions_startup(world: &mut World) {
     let to_enable = extensions_config::resolve_enabled_list(world);
     for name in &to_enable {

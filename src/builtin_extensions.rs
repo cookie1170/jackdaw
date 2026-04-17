@@ -1,20 +1,7 @@
-//! Built-in Jackdaw extensions.
-//!
-//! Each feature area of the editor exposes its dock windows through its
-//! own `JackdawExtension` so Jackdaw dogfoods the same API third-party
-//! authors use. The Extensions dialog (File > Extensions...) lists these
-//! alongside external extensions and lets the user disable a feature
-//! area entirely; for example, turning off `inspector` removes the
-//! Components, Materials, Resources, and Systems windows.
-//!
-//! The `default_area` field on each `WindowDescriptor` preserves the
-//! original dock layout: core navigation windows go into the left panel,
-//! the asset, timeline, and terminal windows into the bottom dock, and
-//! inspector windows into the right sidebar.
-//!
-//! All of these are registered into the `ExtensionCatalog` by
-//! `EditorPlugin::build` and loaded at startup by
-//! `apply_enabled_extensions_startup`.
+//! Built-in Jackdaw extensions. Each feature area of the editor owns
+//! its dock windows through a `JackdawExtension`, so Jackdaw uses the
+//! same API third-party authors do. Disable one in File > Extensions
+//! to remove its windows from the layout.
 
 use std::sync::Arc;
 
@@ -22,8 +9,7 @@ use bevy::prelude::*;
 use jackdaw_api::{ExtensionContext, ExtensionKind, JackdawExtension, WindowDescriptor};
 use jackdaw_feathers::icons::Icon;
 
-/// Scene Tree, Import, and Project Files; the essential navigation
-/// panels shown in the left dock area.
+/// Scene Tree, Import, and Project Files in the left dock.
 pub struct CoreWindowsExtension;
 
 impl JackdawExtension for CoreWindowsExtension {
@@ -97,7 +83,7 @@ impl JackdawExtension for CoreWindowsExtension {
     }
 }
 
-/// Asset Browser: lives in the bottom dock.
+/// Assets window in the bottom dock.
 pub struct AssetBrowserExtension;
 
 impl JackdawExtension for AssetBrowserExtension {
@@ -133,7 +119,7 @@ impl JackdawExtension for AssetBrowserExtension {
     }
 }
 
-/// Timeline: animation authoring panel in the bottom dock.
+/// Animation timeline in the bottom dock.
 pub struct TimelineExtension;
 
 impl JackdawExtension for TimelineExtension {
@@ -159,7 +145,7 @@ impl JackdawExtension for TimelineExtension {
     }
 }
 
-/// Terminal: placeholder panel in the bottom dock.
+/// Terminal placeholder in the bottom dock.
 pub struct TerminalExtension;
 
 impl JackdawExtension for TerminalExtension {
@@ -202,8 +188,7 @@ impl JackdawExtension for TerminalExtension {
     }
 }
 
-/// Inspector: Components, Materials, Resources, and Systems windows
-/// for the right-sidebar stack.
+/// Right-sidebar stack: Components, Materials, Resources, Systems.
 pub struct InspectorExtension;
 
 impl JackdawExtension for InspectorExtension {
