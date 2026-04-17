@@ -20,7 +20,21 @@ impl Plugin for PhysicsBrushBridgePlugin {
         app.add_systems(
             PreUpdate,
             sync_editor_collider_config.run_if(in_state(crate::AppState::Editor)),
-        );
+        )
+        .add_observer(remove_collider_when_avian_collider_removed);
+    }
+}
+
+/// When the user-facing `AvianCollider` is removed (e.g. physics toggle off,
+/// or undo of enable-physics), also remove the runtime `Collider` we built
+/// from it. Without this, the collider gizmo keeps being drawn after undo.
+fn remove_collider_when_avian_collider_removed(
+    trigger: On<Remove, AvianCollider>,
+    mut commands: Commands,
+) {
+    let entity = trigger.event_target();
+    if let Ok(mut ec) = commands.get_entity(entity) {
+        ec.try_remove::<Collider>();
     }
 }
 

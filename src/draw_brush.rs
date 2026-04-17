@@ -1104,8 +1104,7 @@ fn spawn_drawn_brush(active: &ActiveDraw, commands: &mut Commands) {
             data: brush_data_from_entity(world, entity),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(cmd));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(cmd));
     });
 }
 
@@ -1286,8 +1285,7 @@ fn append_to_brush(active: &ActiveDraw, commands: &mut Commands) {
             label: "Append brush geometry".to_string(),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(cmd));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(cmd));
     });
 }
 
@@ -1531,8 +1529,7 @@ fn spawn_polygon_brush(active: &ActiveDraw, commands: &mut Commands) {
             data: brush_data_from_entity(world, entity),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(cmd));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(cmd));
     });
 }
 
@@ -2201,8 +2198,7 @@ fn subtract_drawn_brush(active: &ActiveDraw, commands: &mut Commands) {
             fragments,
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(cmd));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(cmd));
     });
 }
 
@@ -2496,11 +2492,10 @@ pub(crate) fn join_selected_brushes_impl(world: &mut World) {
 
         // Push grouped undo command
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(CommandGroup {
+        history.push_executed(Box::new(CommandGroup {
             commands: undo_commands,
             label: "Join brushes".to_string(),
         }));
-        history.redo_stack.clear();
     }
 }
 
@@ -2773,8 +2768,7 @@ pub(crate) fn csg_subtract_selected_impl(world: &mut World) {
         fragments,
     };
     let mut history = world.resource_mut::<CommandHistory>();
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
 }
 
 fn csg_intersect_selected(
@@ -2903,8 +2897,7 @@ pub(crate) fn csg_intersect_selected_impl(world: &mut World) {
         fragments: vec![BrushOrGroup::Single(brush_data)],
     };
     let mut history = world.resource_mut::<CommandHistory>();
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
 }
 
 fn extend_face_to_brush(
@@ -3181,6 +3174,5 @@ pub(crate) fn extend_face_to_brush_impl(
         label: "Extend face to brush".to_string(),
     };
     let mut history = world.resource_mut::<CommandHistory>();
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
 }

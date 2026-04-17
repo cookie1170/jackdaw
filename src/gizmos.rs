@@ -417,8 +417,7 @@ fn handle_gizmo_drag(
                     old_transform: drag_state.start_transform,
                     new_transform: *transform,
                 };
-                history.undo_stack.push(Box::new(cmd));
-                history.redo_stack.clear();
+                history.push_executed(Box::new(cmd));
             }
         }
         drag_state.active = false;

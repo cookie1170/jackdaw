@@ -27,6 +27,21 @@ impl WindowRegistry {
         self.windows.push(descriptor);
     }
 
+    /// Remove a window by id. Returns true if the window was found.
+    /// Rebuilds the id -> index mapping after removal.
+    pub fn unregister(&mut self, id: &str) -> bool {
+        let Some(idx) = self.index.remove(id) else {
+            return false;
+        };
+        self.windows.remove(idx);
+        // Re-index remaining entries since positions shifted.
+        self.index.clear();
+        for (i, w) in self.windows.iter().enumerate() {
+            self.index.insert(w.id.clone(), i);
+        }
+        true
+    }
+
     pub fn get(&self, id: &str) -> Option<&DockWindowDescriptor> {
         self.index.get(id).map(|&i| &self.windows[i])
     }

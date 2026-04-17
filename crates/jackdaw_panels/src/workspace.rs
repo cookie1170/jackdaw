@@ -31,6 +31,20 @@ impl WorkspaceRegistry {
         self.workspaces.push(descriptor);
     }
 
+    /// Remove a workspace by id. If it was the active workspace, falls
+    /// back to the first remaining workspace (or `None` if none remain).
+    /// Returns true if a workspace was removed.
+    pub fn unregister(&mut self, id: &str) -> bool {
+        let Some(idx) = self.workspaces.iter().position(|w| w.id == id) else {
+            return false;
+        };
+        self.workspaces.remove(idx);
+        if self.active.as_deref() == Some(id) {
+            self.active = self.workspaces.first().map(|w| w.id.clone());
+        }
+        true
+    }
+
     pub fn get(&self, id: &str) -> Option<&WorkspaceDescriptor> {
         self.workspaces.iter().find(|w| w.id == id)
     }

@@ -85,7 +85,12 @@ impl Plugin for NodeGraphPlugin {
                 connection::update_pending_remove_markers,
                 // Keyboard.
                 interaction::handle_delete_key,
-                interaction::handle_undo_redo_keys,
+                // Note: undo/redo is handled globally by the main editor's
+                // `handle_undo_redo_keys` system against the same shared
+                // `CommandHistory`. Having a duplicate handler here caused
+                // Ctrl+Z to pop two commands at once (issue seen when drawing
+                // brushes + applying material: undo removed the material AND
+                // the last brush).
                 add_node_popover::handle_tab_quick_add,
                 add_node_popover::handle_popover_escape,
             ),

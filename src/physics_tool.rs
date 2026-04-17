@@ -389,6 +389,7 @@ fn commit_physics_transforms(world: &mut World) {
             field_path: String::new(),
             old_value: old_json,
             new_value: new_json,
+            was_derived: false,
         }));
     }
 
@@ -406,6 +407,5 @@ fn commit_physics_transforms(world: &mut World) {
     };
     cmd.execute(world);
     let mut history = world.resource_mut::<CommandHistory>();
-    history.undo_stack.push(cmd);
-    history.redo_stack.clear();
+    history.push_executed(cmd);
 }

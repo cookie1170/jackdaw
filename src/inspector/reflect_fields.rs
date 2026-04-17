@@ -1318,6 +1318,7 @@ fn apply_color_with_undo(
             field_path: field_path.to_string(),
             old_value: old_json,
             new_value: new_json.clone(),
+            was_derived: false,
         }));
     }
     drop(reg);
@@ -1336,8 +1337,7 @@ fn apply_color_with_undo(
     };
     cmd.execute(world);
     let mut history = world.resource_mut::<CommandHistory>();
-    history.undo_stack.push(cmd);
-    history.redo_stack.clear();
+    history.push_executed(cmd);
 }
 
 fn spawn_numeric_field(
@@ -1482,6 +1482,7 @@ fn apply_field_value_with_undo(
             field_path: field_path.to_string(),
             old_value: old_json,
             new_value: new_json.clone(),
+            was_derived: false,
         }));
     }
     drop(reg);
@@ -1500,8 +1501,7 @@ fn apply_field_value_with_undo(
     };
     cmd.execute(world);
     let mut history = world.resource_mut::<CommandHistory>();
-    history.undo_stack.push(cmd);
-    history.redo_stack.clear();
+    history.push_executed(cmd);
 }
 
 /// Parse a text field string to the most appropriate JSON value.
@@ -2384,6 +2384,7 @@ fn apply_enum_variant_with_undo(
             field_path: field_path.to_string(),
             old_value: old_json,
             new_value: new_json.clone(),
+            was_derived: false,
         }));
     }
     drop(reg);
@@ -2402,8 +2403,7 @@ fn apply_enum_variant_with_undo(
     };
     cmd.execute(world);
     let mut history = world.resource_mut::<CommandHistory>();
-    history.undo_stack.push(cmd);
-    history.redo_stack.clear();
+    history.push_executed(cmd);
     // No need to flag anything  -- `refresh_enum_variants` detects the ECS
     // variant change and rebuilds the affected subtree automatically. Same
     // goes for undo/redo since the command framework mutates the ECS too.

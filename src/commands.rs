@@ -149,6 +149,14 @@ impl EditorCommand for ReparentEntity {
 }
 
 fn set_parent(world: &mut World, entity: Entity, parent: Option<Entity>) {
+    // Preserve world position across reparent. Compute the entity's current
+    // world transform, then update its local Transform so that:
+    //   new_parent_global * new_local = current_world
+    // This prevents the brush from "jumping" (or disappearing off-screen)
+    // when parented under an entity at a non-origin position.
+    let current_world = world.get::<GlobalTransform>(entity).copied();
+    let new_parent_world = parent.and_then(|p| world.get::<GlobalTransform>(p).copied());
+
     match parent {
         Some(p) => {
             world.entity_mut(entity).insert(ChildOf(p));
@@ -157,11 +165,41 @@ fn set_parent(world: &mut World, entity: Entity, parent: Option<Entity>) {
             world.entity_mut(entity).remove::<ChildOf>();
         }
     }
-    // Update AST parent
-    let mut ast = world.resource_mut::<jackdaw_jsn::SceneJsnAst>();
-    let parent_idx = parent.and_then(|p| ast.ecs_to_jsn.get(&p).copied());
-    if let Some(node) = ast.node_for_entity_mut(entity) {
-        node.parent = parent_idx;
+
+    let new_transform =
+        if let (Some(world_tf), Some(parent_world)) = (current_world, new_parent_world) {
+            Some(Transform::from_matrix(
+                (parent_world.affine().inverse() * world_tf.affine()).into(),
+            ))
+        } else if parent.is_none() {
+            current_world.map(|w| Transform::from_matrix(w.affine().into()))
+        } else {
+            None
+        };
+    if let Some(new_tf) = new_transform {
+        if let Some(mut tf) = world.get_mut::<Transform>(entity) {
+            *tf = new_tf;
+        }
+    }
+
+    // Update AST parent and (if changed) Transform
+    let parent_idx = {
+        let ast = world.resource::<jackdaw_jsn::SceneJsnAst>();
+        parent.and_then(|p| ast.ecs_to_jsn.get(&p).copied())
+    };
+    {
+        let mut ast = world.resource_mut::<jackdaw_jsn::SceneJsnAst>();
+        if let Some(node) = ast.node_for_entity_mut(entity) {
+            node.parent = parent_idx;
+        }
+    }
+    if let Some(new_tf) = new_transform {
+        sync_component_to_ast(
+            world,
+            entity,
+            "bevy_transform::components::transform::Transform",
+            &new_tf,
+        );
     }
 }
 
@@ -237,8 +275,25 @@ impl EditorCommand for AddComponent {
     }
 
     fn undo(&mut self, world: &mut World) {
+        // Resolve promoted components' ComponentIds via the type registry
+        // so we can remove them from the ECS as well as the AST.
+        let registry = world.resource::<AppTypeRegistry>().clone();
+        let reg = registry.read();
+        let promoted_component_ids: Vec<bevy::ecs::component::ComponentId> = self
+            .promoted_components
+            .iter()
+            .filter_map(|type_path| {
+                let type_id = reg.get_with_type_path(type_path)?.type_id();
+                world.components().get_id(type_id)
+            })
+            .collect();
+        drop(reg);
+
         if let Ok(mut entity) = world.get_entity_mut(self.entity) {
             entity.remove_by_id(self.component_id);
+            for cid in &promoted_component_ids {
+                entity.remove_by_id(*cid);
+            }
         }
         // Remove the explicitly-added component + all promoted components from AST
         if let Some(node) = world
@@ -246,9 +301,15 @@ impl EditorCommand for AddComponent {
             .node_for_entity_mut(self.entity)
         {
             node.components.remove(&self.type_path);
+            node.derived_components.remove(&self.type_path);
             for promoted in &self.promoted_components {
                 node.components.remove(promoted);
+                node.derived_components.remove(promoted);
             }
+        }
+        // Trigger inspector rebuild so the UI reflects the removal immediately.
+        if let Ok(mut ec) = world.get_entity_mut(self.entity) {
+            ec.insert(crate::inspector::InspectorDirty);
         }
     }
 
@@ -328,11 +389,20 @@ pub struct SpawnEntity {
 
 impl EditorCommand for SpawnEntity {
     fn execute(&mut self, world: &mut World) {
-        let _entity = (self.spawn_fn)(world);
+        let entity = (self.spawn_fn)(world);
+        self.spawned = Some(entity);
     }
 
-    fn undo(&mut self, _world: &mut World) {
-        // TODO: Track spawned entity for despawn on undo
+    fn undo(&mut self, world: &mut World) {
+        if let Some(entity) = self.spawned.take() {
+            deselect_entities(world, &[entity]);
+            world
+                .resource_mut::<jackdaw_jsn::SceneJsnAst>()
+                .remove_node(entity);
+            if let Ok(entity_mut) = world.get_entity_mut(entity) {
+                entity_mut.despawn();
+            }
+        }
     }
 
     fn description(&self) -> &str {
@@ -424,9 +494,16 @@ pub(crate) fn collect_entity_ids(world: &World, entity: Entity, out: &mut Vec<En
     out.push(entity);
     if let Some(children) = world.get::<Children>(entity) {
         for child in children.iter() {
-            if world.get::<EditorEntity>(child).is_none() {
-                collect_entity_ids(world, child, out);
+            // Skip editor-only entities and runtime-generated children
+            // (e.g. BrushFaceEntity meshes). Including NonSerializable
+            // children causes them to be restored as orphans at origin
+            // after undo, while the parent regenerates its own.
+            if world.get::<EditorEntity>(child).is_some()
+                || world.get::<crate::NonSerializable>(child).is_some()
+            {
+                continue;
             }
+            collect_entity_ids(world, child, out);
         }
     }
 }
@@ -488,6 +565,9 @@ pub struct SetJsnField {
     pub field_path: String,
     pub old_value: serde_json::Value,
     pub new_value: serde_json::Value,
+    /// True if the component was in the `derived_components` set before this
+    /// command ran. Set on first execute so undo can demote the component back.
+    pub was_derived: bool,
 }
 
 impl EditorCommand for SetJsnField {
@@ -504,9 +584,11 @@ impl EditorCommand for SetJsnField {
                 &registry,
             );
             // If the user explicitly edits a derived component, promote it to
-            // "authored" so the change persists on save.
+            // "authored" so the change persists on save. Remember we did so,
+            // so undo can restore the derived state.
             if let Some(node) = ast.node_for_entity_mut(self.entity) {
                 if node.derived_components.remove(&self.type_path) {
+                    self.was_derived = true;
                     info!(
                         "Promoted derived component '{}' to authored (user edited it)",
                         self.type_path
@@ -527,15 +609,20 @@ impl EditorCommand for SetJsnField {
         {
             let registry = world.resource::<AppTypeRegistry>().clone();
             let registry = registry.read();
-            world
-                .resource_mut::<jackdaw_jsn::SceneJsnAst>()
-                .set_component_field(
-                    self.entity,
-                    &self.type_path,
-                    &self.field_path,
-                    self.old_value.clone(),
-                    &registry,
-                );
+            let mut ast = world.resource_mut::<jackdaw_jsn::SceneJsnAst>();
+            ast.set_component_field(
+                self.entity,
+                &self.type_path,
+                &self.field_path,
+                self.old_value.clone(),
+                &registry,
+            );
+            // Restore derived state if execute promoted it to authored.
+            if self.was_derived {
+                if let Some(node) = ast.node_for_entity_mut(self.entity) {
+                    node.derived_components.insert(self.type_path.clone());
+                }
+            }
         }
         apply_jsn_field_to_ecs(
             world,

@@ -50,6 +50,7 @@ jobs:
             jackdaw_avian_integration
             jackdaw_remote
             jackdaw_panels
+            jackdaw_api
             jackdaw_jsn
             jackdaw_camera
             jackdaw_feathers

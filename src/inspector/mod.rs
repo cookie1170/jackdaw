@@ -140,18 +140,86 @@ impl Plugin for InspectorPlugin {
                     component_display::filter_inspector_components,
                     anim_diamond::decorate_animatable_fields,
                     anim_diamond::update_anim_diamond_highlights,
+                    refresh_name_field,
                 )
                     .run_if(in_state(crate::AppState::Editor)),
             );
     }
 }
 
+/// Keep the Name field's text input in sync with the underlying Name component.
+/// Needed so that undo/redo and external edits are reflected in the UI without
+/// having to deselect and reselect the entity.
+fn refresh_name_field(world: &mut World) {
+    use bevy::input_focus::InputFocus;
+    use jackdaw_feathers::text_edit::{
+        TextEditDragging, TextEditValue, TextInputQueue, set_text_input_value,
+    };
+
+    // Gather (outer, source_entity, current_value) tuples.
+    let mut targets: Vec<(Entity, Entity, String)> = Vec::new();
+    let mut query = world.query::<(Entity, &NameFieldInput, &TextEditValue)>();
+    for (outer, input, value) in query.iter(world) {
+        targets.push((outer, input.0, value.0.clone()));
+    }
+    if targets.is_empty() {
+        return;
+    }
+
+    let input_focus = world.resource::<InputFocus>().0;
+
+    for (outer, source, current) in targets {
+        let Some(name) = world.get::<Name>(source) else {
+            continue;
+        };
+        let expected = name.as_str().to_string();
+        if current == expected {
+            continue;
+        }
+        // Walk outer -> children (and grandchildren) to find the wrapper.
+        let Some((wrapper_entity, inner_entity)) = find_text_edit_entities_local(world, outer)
+        else {
+            continue;
+        };
+        // Skip if the user is currently dragging or typing in this field.
+        if world.get::<TextEditDragging>(wrapper_entity).is_some() {
+            continue;
+        }
+        if input_focus == Some(inner_entity) {
+            continue;
+        }
+        if let Some(mut queue) = world.get_mut::<TextInputQueue>(inner_entity) {
+            set_text_input_value(&mut queue, expected);
+        }
+    }
+}
+
+fn find_text_edit_entities_local(world: &World, outer_entity: Entity) -> Option<(Entity, Entity)> {
+    use jackdaw_feathers::text_edit::TextEditWrapper;
+    let children = world.get::<Children>(outer_entity)?;
+    for child in children.iter() {
+        if let Some(wrapper) = world.get::<TextEditWrapper>(child) {
+            return Some((child, wrapper.0));
+        }
+        if let Some(grandchildren) = world.get::<Children>(child) {
+            for gc in grandchildren.iter() {
+                if let Some(wrapper) = world.get::<TextEditWrapper>(gc) {
+                    return Some((gc, wrapper.0));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Handle TextEditCommitEvent for Name field inputs.
+/// Pushes a `SetJsnField` command so the rename can be undone.
 fn on_name_field_commit(
     event: On<jackdaw_feathers::text_edit::TextEditCommitEvent>,
     name_inputs: Query<&NameFieldInput>,
     child_of_query: Query<&ChildOf>,
-    mut names: Query<&mut Name>,
+    names: Query<&Name>,
+    mut commands: Commands,
 ) {
     // Walk up from the committed entity to find a NameFieldInput
     let mut current = event.entity;
@@ -171,9 +239,31 @@ fn on_name_field_commit(
         return;
     };
 
-    if let Ok(mut name) = names.get_mut(source_entity) {
-        *name = Name::new(event.text.clone());
+    let old_name = names
+        .get(source_entity)
+        .map(|n| n.as_str().to_string())
+        .unwrap_or_default();
+    let new_name = event.text.clone();
+
+    if old_name == new_name {
+        return;
     }
+
+    commands.queue(move |world: &mut World| {
+        let cmd = crate::commands::SetJsnField {
+            entity: source_entity,
+            type_path: "bevy_ecs::name::Name".to_string(),
+            field_path: String::new(),
+            old_value: serde_json::Value::String(old_name),
+            new_value: serde_json::Value::String(new_name),
+            was_derived: false,
+        };
+        let mut cmd: Box<dyn jackdaw_commands::EditorCommand> = Box::new(cmd);
+        cmd.execute(world);
+        world
+            .resource_mut::<crate::commands::CommandHistory>()
+            .push_executed(cmd);
+    });
 }
 
 #[derive(Component)]

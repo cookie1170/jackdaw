@@ -1,7 +1,9 @@
+pub mod add_entity_picker;
 pub mod alignment_guides;
 pub mod asset_browser;
 pub mod asset_catalog;
 pub mod brush;
+pub mod builtin_extensions;
 pub mod colors;
 pub mod commands;
 pub mod custom_properties;
@@ -15,6 +17,9 @@ pub mod inspector;
 pub mod keybind_settings;
 pub mod keybinds;
 pub use inspector::{EditorMeta, ReflectEditorMeta};
+pub mod extension_loader;
+pub mod extensions_config;
+pub mod extensions_dialog;
 pub mod layout;
 pub mod material_browser;
 pub mod material_preview;
@@ -147,14 +152,9 @@ impl Plugin for EditorPlugin {
             .add_plugins(jackdaw_node_graph::NodeGraphPlugin)
             .add_plugins(jackdaw_animation::AnimationPlugin)
             .add_plugins(jackdaw_panels::DockPlugin)
-            .add_systems(
-                Startup,
-                (
-                    register_all_dock_windows,
-                    register_workspaces,
-                    sync_icon_font,
-                ),
-            )
+            .add_plugins(extension_loader::ExtensionLoaderPlugin)
+            .add_plugins(extensions_dialog::ExtensionsDialogPlugin)
+            .add_systems(Startup, (register_workspaces, sync_icon_font))
             .configure_sets(
                 Update,
                 EditorInteraction
@@ -167,9 +167,18 @@ impl Plugin for EditorPlugin {
             .init_resource::<layout::KeybindHelpPopover>()
             .init_resource::<asset_catalog::AssetCatalog>()
             .init_resource::<jackdaw_jsn::SceneJsnAst>()
+            .init_resource::<MenuBarDirty>()
+            .add_observer(flag_menu_dirty_on_window_add)
+            .add_observer(flag_menu_dirty_on_window_remove)
+            .add_observer(flag_menu_dirty_on_menu_entry_add)
+            .add_observer(flag_menu_dirty_on_menu_entry_remove)
             .add_systems(
                 OnEnter(AppState::Editor),
                 (spawn_layout, init_layout, populate_menu).chain(),
+            )
+            .add_systems(
+                Update,
+                rebuild_menu_if_dirty.run_if(in_state(AppState::Editor)),
             )
             .add_systems(OnExit(AppState::Editor), cleanup_editor)
             .add_systems(
@@ -191,6 +200,8 @@ impl Plugin for EditorPlugin {
                     handle_keyframe_delete_intercept.before(entity_ops::handle_entity_keys),
                     handle_timeline_shortcuts.before(entity_ops::handle_entity_keys),
                     auto_save_layout_on_change,
+                    add_entity_picker::filter_add_entity_picker,
+                    add_entity_picker::close_add_entity_picker_on_escape,
                 )
                     .run_if(in_state(AppState::Editor)),
             )
@@ -205,6 +216,86 @@ impl Plugin for EditorPlugin {
             .add_observer(on_clip_name_commit)
             .add_observer(on_duration_input_commit)
             .add_observer(on_timeline_keyframe_click);
+
+        // Register built-in and example extensions into the catalog.
+        // Runs during `build()` so BEI's `finish()` hook sees every
+        // context type. Built-ins override `kind()` to `Builtin`; the
+        // rest default to `Custom`.
+        jackdaw_api::register_extension(app, "core_windows", || {
+            Box::new(builtin_extensions::CoreWindowsExtension)
+        });
+        jackdaw_api::register_extension(app, "asset_browser", || {
+            Box::new(builtin_extensions::AssetBrowserExtension)
+        });
+        jackdaw_api::register_extension(app, "timeline", || {
+            Box::new(builtin_extensions::TimelineExtension)
+        });
+        jackdaw_api::register_extension(app, "terminal", || {
+            Box::new(builtin_extensions::TerminalExtension)
+        });
+        jackdaw_api::register_extension(app, "inspector", || {
+            Box::new(builtin_extensions::InspectorExtension)
+        });
+        jackdaw_api::register_extension(app, "sample", || {
+            Box::new(sample_extension::SampleExtension)
+        });
+        jackdaw_api::register_extension(app, "viewable_camera", || {
+            Box::new(viewable_camera_extension::ViewableCameraExtension)
+        });
+
+        // Must run after every plugin's `finish()`: BEI initializes
+        // `ContextInstances<PreUpdate>` there, and spawning a context
+        // entity before that resource exists panics.
+        app.add_systems(Startup, apply_enabled_extensions_startup);
+    }
+}
+
+/// Drained once per frame so multiple registrations coalesce into a
+/// single menu-bar rebuild.
+#[derive(Resource, Default)]
+pub struct MenuBarDirty(pub bool);
+
+fn rebuild_menu_if_dirty(world: &mut World) {
+    if !world.resource::<MenuBarDirty>().0 {
+        return;
+    }
+    world.resource_mut::<MenuBarDirty>().0 = false;
+    populate_menu(world);
+}
+
+fn flag_menu_dirty_on_window_add(
+    _: On<Add, jackdaw_api::RegisteredWindow>,
+    mut dirty: ResMut<MenuBarDirty>,
+) {
+    dirty.0 = true;
+}
+
+fn flag_menu_dirty_on_window_remove(
+    _: On<Remove, jackdaw_api::RegisteredWindow>,
+    mut dirty: ResMut<MenuBarDirty>,
+) {
+    dirty.0 = true;
+}
+
+fn flag_menu_dirty_on_menu_entry_add(
+    _: On<Add, jackdaw_api::RegisteredMenuEntry>,
+    mut dirty: ResMut<MenuBarDirty>,
+) {
+    dirty.0 = true;
+}
+
+fn flag_menu_dirty_on_menu_entry_remove(
+    _: On<Remove, jackdaw_api::RegisteredMenuEntry>,
+    mut dirty: ResMut<MenuBarDirty>,
+) {
+    dirty.0 = true;
+}
+
+/// Enable every catalog entry `resolve_enabled_list` reports as on.
+fn apply_enabled_extensions_startup(world: &mut World) {
+    let to_enable = extensions_config::resolve_enabled_list(world);
+    for name in &to_enable {
+        jackdaw_api::enable_extension(world, name);
     }
 }
 
@@ -896,8 +987,7 @@ fn handle_keyframe_delete_intercept(world: &mut World) {
         label: "Delete keyframes".to_string(),
     };
     let mut history = world.resource_mut::<jackdaw_commands::CommandHistory>();
-    history.undo_stack.push(Box::new(group));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(group));
 }
 
 /// Typed, undo-aware spawn command for animation keyframes. Mirror of
@@ -1336,8 +1426,7 @@ fn handle_keyframe_paste(world: &mut World) {
         label: "Paste keyframes".to_string(),
     };
     let mut history = world.resource_mut::<jackdaw_commands::CommandHistory>();
-    history.undo_stack.push(Box::new(group));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(group));
     world
         .resource_mut::<ButtonInput<KeyCode>>()
         .clear_just_pressed(KeyCode::KeyV);
@@ -1462,6 +1551,7 @@ fn on_duration_input_commit(
                 field_path: "duration".to_string(),
                 old_value: old_json,
                 new_value: new_json,
+                was_derived: false,
             }),
             world,
         );
@@ -1560,6 +1650,106 @@ fn populate_menu(world: &mut World) {
     let Some(menu_bar_entity) = menu_bar_entity else {
         return;
     };
+
+    // Despawn existing menu-bar items before re-populating. Idempotent on
+    // first call (nothing to remove), necessary for rebuilds when the
+    // window registry changes (extensions toggled on/off).
+    let existing: Vec<Entity> = world
+        .query_filtered::<Entity, With<jackdaw_widgets::menu_bar::MenuBarItem>>()
+        .iter(world)
+        .collect();
+    for entity in existing {
+        if let Ok(ec) = world.get_entity_mut(entity) {
+            ec.despawn();
+        }
+    }
+
+    // Collect extension-contributed menu entries for menus OTHER than
+    // "Add". The "Add" menu goes through the shared
+    // `collect_add_menu_items` helper below so the toolbar and the
+    // scene-tree picker present identical content.
+    let mut ext_menu_entries: std::collections::BTreeMap<String, Vec<(String, String)>> =
+        std::collections::BTreeMap::new();
+    {
+        let mut q = world.query::<&jackdaw_api::RegisteredMenuEntry>();
+        for entry in q.iter(world) {
+            if entry.menu == "Add" {
+                continue;
+            }
+            ext_menu_entries
+                .entry(entry.menu.clone())
+                .or_default()
+                .push((format!("op:{}", entry.operator_id), entry.label.clone()));
+        }
+        for entries in ext_menu_entries.values_mut() {
+            entries.sort_by(|a, b| a.1.cmp(&b.1));
+        }
+    }
+
+    // Collect window entries from WindowRegistry grouped by default_area.
+    // Built-in windows have a default_area, extension windows don't (empty string).
+    let window_registry = world.resource::<jackdaw_panels::WindowRegistry>();
+    let mut by_area: std::collections::BTreeMap<String, Vec<(String, String)>> =
+        std::collections::BTreeMap::new();
+    for descriptor in window_registry.iter() {
+        let area_key = if descriptor.default_area.is_empty() {
+            "zz_extensions".to_string()
+        } else {
+            descriptor.default_area.clone()
+        };
+        by_area.entry(area_key).or_default().push((
+            format!("window.open:{}", descriptor.id),
+            descriptor.name.clone(),
+        ));
+    }
+    // Build the Window menu with separators between area groups, followed
+    // by Reset Layout at the bottom.
+    let mut window_entries: Vec<(String, String)> = Vec::new();
+    let area_order = ["left", "bottom_dock", "right_sidebar", "zz_extensions"];
+    let mut first = true;
+    for area in area_order {
+        let Some(entries) = by_area.get(area) else {
+            continue;
+        };
+        if !first {
+            window_entries.push(("---".to_string(), String::new()));
+        }
+        first = false;
+        for (id, name) in entries {
+            window_entries.push((id.clone(), name.clone()));
+        }
+    }
+    if !window_entries.is_empty() {
+        window_entries.push(("---".to_string(), String::new()));
+    }
+    window_entries.push((
+        "window.reset_layout".to_string(),
+        "Reset Layout".to_string(),
+    ));
+    let window_entries_refs: Vec<(&str, &str)> = window_entries
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+
+    // Build the Add menu from the shared helper so the toolbar and the
+    // scene-tree Add Entity picker stay in lockstep. Separators are
+    // inserted between categories.
+    let add_items = add_entity_picker::collect_add_menu_items(world);
+    let mut add_menu: Vec<(String, String)> = Vec::with_capacity(add_items.len() + 8);
+    let mut last_category: Option<String> = None;
+    for item in add_items {
+        if last_category.as_deref() != Some(item.category.as_str()) {
+            if last_category.is_some() {
+                add_menu.push(("---".into(), String::new()));
+            }
+            last_category = Some(item.category.clone());
+        }
+        add_menu.push((item.action, item.label));
+    }
+    let add_menu_refs: Vec<(&str, &str)> = add_menu
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     jackdaw_feathers::menu_bar::populate_menu_bar(
         world,
         menu_bar_entity,
@@ -1576,6 +1766,7 @@ fn populate_menu(world: &mut World) {
                     ("file.save_template", "Save Selection as Template"),
                     ("---", ""),
                     ("file.keybinds", "Keybinds..."),
+                    ("file.extensions", "Extensions..."),
                     ("---", ""),
                     ("file.open_recent", "Open Recent..."),
                     ("file.home", "Home"),
@@ -1609,44 +1800,8 @@ fn populate_menu(world: &mut World) {
                     ("view.hierarchy_arrows", "Toggle Hierarchy Arrows"),
                 ],
             ),
-            (
-                "Add",
-                vec![
-                    ("add.cube", "Cube"),
-                    ("add.sphere", "Sphere"),
-                    ("---", ""),
-                    ("add.point_light", "Point Light"),
-                    ("add.directional_light", "Directional Light"),
-                    ("add.spot_light", "Spot Light"),
-                    ("---", ""),
-                    ("add.camera", "Camera"),
-                    ("add.empty", "Empty"),
-                    ("---", ""),
-                    ("add.navmesh", "Navmesh Region"),
-                    ("add.terrain", "Terrain"),
-                    ("---", ""),
-                    ("add.prefab", "Prefab..."),
-                ],
-            ),
-            (
-                "Window",
-                vec![
-                    ("window.hierarchy", "Scene Tree"),
-                    ("window.import", "Import"),
-                    ("window.project_files", "Project Files"),
-                    ("---", ""),
-                    ("window.assets", "Assets"),
-                    ("window.timeline", "Timeline"),
-                    ("window.terminal", "Terminal"),
-                    ("---", ""),
-                    ("window.components", "Components"),
-                    ("window.materials", "Materials"),
-                    ("window.resources", "Resources"),
-                    ("window.systems", "Systems"),
-                    ("---", ""),
-                    ("window.reset_layout", "Reset Layout"),
-                ],
-            ),
+            ("Add", add_menu_refs),
+            ("Window", window_entries_refs),
         ],
     );
 }
@@ -1780,6 +1935,11 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
         "file.keybinds" => {
             commands.trigger(keybind_settings::OpenKeybindSettingsEvent);
         }
+        "file.extensions" => {
+            commands.queue(|world: &mut World| {
+                extensions_dialog::open_extensions_dialog(world);
+            });
+        }
         "file.home" => {
             commands.queue(|world: &mut World| {
                 world
@@ -1887,28 +2047,46 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
         }
         "add.navmesh" => {
             commands.queue(|world: &mut World| {
-                let mut system_state: SystemState<(Commands, ResMut<Selection>)> =
-                    SystemState::new(world);
-                let (mut commands, mut selection) = system_state.get_mut(world);
-                let entity = navmesh::spawn_navmesh_entity(&mut commands);
-                selection.select_single(&mut commands, entity);
-                system_state.apply(world);
+                spawn_undoable(world, "Add Navmesh Region", |world| {
+                    let mut system_state: SystemState<(Commands, ResMut<Selection>)> =
+                        SystemState::new(world);
+                    let (mut commands, mut selection) = system_state.get_mut(world);
+                    let entity = navmesh::spawn_navmesh_entity(&mut commands);
+                    selection.select_single(&mut commands, entity);
+                    system_state.apply(world);
+                    scene_io::register_entity_in_ast(world, entity);
+                    entity
+                });
             });
         }
         "add.terrain" => {
             commands.queue(|world: &mut World| {
-                let mut system_state: SystemState<(Commands, ResMut<Selection>)> =
-                    SystemState::new(world);
-                let (mut commands, mut selection) = system_state.get_mut(world);
-                let entity = terrain::spawn_terrain_entity(&mut commands);
-                selection.select_single(&mut commands, entity);
-                system_state.apply(world);
-                scene_io::register_entity_in_ast(world, entity);
+                spawn_undoable(world, "Add Terrain", |world| {
+                    let mut system_state: SystemState<(Commands, ResMut<Selection>)> =
+                        SystemState::new(world);
+                    let (mut commands, mut selection) = system_state.get_mut(world);
+                    let entity = terrain::spawn_terrain_entity(&mut commands);
+                    selection.select_single(&mut commands, entity);
+                    system_state.apply(world);
+                    scene_io::register_entity_in_ast(world, entity);
+                    entity
+                });
             });
         }
         "add.prefab" => {
             commands.queue(|world: &mut World| {
                 crate::prefab_picker::open_prefab_picker(world);
+            });
+        }
+        action if action.starts_with("op:") => {
+            // Extension-contributed menu entry. The action id is the
+            // operator id with an "op:" prefix. Dispatching through the
+            // operator system rather than a parallel path keeps
+            // behaviour (history entry, poll, modal) identical to
+            // keybind-triggered operators.
+            let operator_id = action.strip_prefix("op:").unwrap().to_string();
+            commands.queue(move |world: &mut World| {
+                jackdaw_api::lifecycle::dispatch_operator_by_id(world, &operator_id, true);
             });
         }
         action if action.starts_with("window.") => {
@@ -1919,21 +2097,8 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
                 return;
             }
 
-            let window_id = match action {
-                "window.hierarchy" => Some("jackdaw.hierarchy"),
-                "window.import" => Some("jackdaw.import"),
-                "window.project_files" => Some("jackdaw.project_files"),
-                "window.assets" => Some("jackdaw.assets"),
-                "window.timeline" => Some("jackdaw.timeline"),
-                "window.terminal" => Some("jackdaw.terminal"),
-                "window.components" => Some("jackdaw.inspector.components"),
-                "window.materials" => Some("jackdaw.inspector.materials"),
-                "window.resources" => Some("jackdaw.inspector.resources"),
-                "window.systems" => Some("jackdaw.inspector.systems"),
-                _ => None,
-            };
-            if let Some(id) = window_id {
-                let id = id.to_string();
+            if let Some(window_id) = action.strip_prefix("window.open:") {
+                let id = window_id.to_string();
                 commands.queue(move |world: &mut World| {
                     open_window_in_default_area(world, &id);
                 });
@@ -1941,6 +2106,22 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
         }
         _ => {}
     }
+}
+
+/// Wrap an entity-spawning closure in a `SpawnEntity` command so Ctrl+Z can undo it.
+fn spawn_undoable<F>(world: &mut World, label: &str, spawn: F)
+where
+    F: Fn(&mut World) -> Entity + Send + Sync + 'static,
+{
+    let mut cmd: Box<dyn jackdaw_commands::EditorCommand> = Box::new(commands::SpawnEntity {
+        spawned: None,
+        spawn_fn: Box::new(spawn),
+        label: label.to_string(),
+    });
+    cmd.execute(world);
+    world
+        .resource_mut::<commands::CommandHistory>()
+        .push_executed(cmd);
 }
 
 fn cleanup_editor(world: &mut World) {
@@ -2327,7 +2508,15 @@ fn open_window_in_default_area(world: &mut World, window_id: &str) {
 
     let target_leaf = {
         let tree = world.resource::<DockTree>();
-        let Some(root) = tree.anchor(&default_area) else {
+        // If window has a default_area, place it there. Otherwise (extension
+        // windows have no default), fall back to the first available anchor
+        // so the user can reposition it from there.
+        let root = if default_area.is_empty() {
+            tree.iter_anchors().next().map(|(_, id)| id)
+        } else {
+            tree.anchor(&default_area)
+        };
+        let Some(root) = root else {
             return;
         };
         tree.leaves_under(root).first().map(|(id, _)| *id)
@@ -2437,220 +2626,4 @@ fn sync_icon_font(
     if let Some(font) = icon_font {
         commands.insert_resource(jackdaw_panels::IconFontHandle(font.0.clone()));
     }
-}
-
-fn register_all_dock_windows(mut registry: ResMut<jackdaw_panels::WindowRegistry>) {
-    use jackdaw_feathers::icons::Icon;
-
-    registry.register(jackdaw_panels::DockWindowDescriptor {
-        id: "jackdaw.assets".into(),
-        name: "Assets".into(),
-        icon: Some(String::from(Icon::FolderOpen.unicode())),
-        default_area: "bottom_dock".into(),
-        priority: 0,
-        build: std::sync::Arc::new(|world, parent| {
-            let icon_font = world
-                .get_resource::<jackdaw_feathers::icons::IconFont>()
-                .map(|f| f.0.clone())
-                .unwrap_or_default();
-            world.spawn((
-                ChildOf(parent),
-                asset_browser::asset_browser_panel(icon_font),
-            ));
-            world
-                .resource_mut::<asset_browser::AssetBrowserState>()
-                .needs_refresh = true;
-        }),
-    });
-
-    registry.register(jackdaw_panels::DockWindowDescriptor {
-        id: "jackdaw.timeline".into(),
-        name: "Timeline".into(),
-        icon: Some(String::from(Icon::Ruler.unicode())),
-        default_area: "bottom_dock".into(),
-        priority: 1,
-        build: std::sync::Arc::new(|world, parent| {
-            world.spawn((ChildOf(parent), jackdaw_animation::timeline_panel()));
-        }),
-    });
-
-    registry.register(jackdaw_panels::DockWindowDescriptor {
-        id: "jackdaw.terminal".into(),
-        name: "Terminal".into(),
-        icon: Some(String::from(Icon::Terminal.unicode())),
-        default_area: "bottom_dock".into(),
-        priority: 2,
-        build: std::sync::Arc::new(|world, parent| {
-            world.spawn((
-                ChildOf(parent),
-                Node {
-                    flex_grow: 1.0,
-                    width: Val::Percent(100.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                children![(
-                    Text::new("Terminal window (not implemented yet)"),
-                    TextFont {
-                        font_size: 11.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.3)),
-                )],
-            ));
-        }),
-    });
-
-    registry.register(jackdaw_panels::DockWindowDescriptor {
-        id: "jackdaw.hierarchy".into(),
-        name: "Scene Tree".into(),
-        icon: None,
-        default_area: "left".into(),
-        priority: 0,
-        build: std::sync::Arc::new(|world, parent| {
-            let icon_font = world
-                .get_resource::<jackdaw_feathers::icons::IconFont>()
-                .map(|f| f.0.clone())
-                .unwrap_or_default();
-            world.spawn((ChildOf(parent), crate::layout::hierarchy_content(icon_font)));
-        }),
-    });
-
-    registry.register(jackdaw_panels::DockWindowDescriptor {
-        id: "jackdaw.import".into(),
-        name: "Import".into(),
-        icon: None,
-        default_area: "left".into(),
-        priority: 1,
-        build: std::sync::Arc::new(|world, parent| {
-            world.spawn((
-                ChildOf(parent),
-                Node {
-                    flex_grow: 1.0,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                children![(
-                    Text::new("Import"),
-                    TextFont {
-                        font_size: 11.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.3)),
-                )],
-            ));
-        }),
-    });
-
-    registry.register(jackdaw_panels::DockWindowDescriptor {
-        id: "jackdaw.project_files".into(),
-        name: "Project Files".into(),
-        icon: None,
-        default_area: "left".into(),
-        priority: 10,
-        build: std::sync::Arc::new(|world, parent| {
-            world.spawn((
-                ChildOf(parent),
-                crate::layout::project_files_panel_content(),
-            ));
-            world
-                .resource_mut::<project_files::ProjectFilesState>()
-                .needs_refresh = true;
-        }),
-    });
-
-    registry.register(jackdaw_panels::DockWindowDescriptor {
-        id: "jackdaw.inspector.components".into(),
-        name: "Components".into(),
-        icon: None,
-        default_area: "right_sidebar".into(),
-        priority: 0,
-        build: std::sync::Arc::new(|world, parent| {
-            let icon_font = world
-                .get_resource::<jackdaw_feathers::icons::IconFont>()
-                .map(|f| f.0.clone())
-                .unwrap_or_default();
-            world.spawn((
-                ChildOf(parent),
-                crate::layout::inspector_components_content(icon_font),
-            ));
-        }),
-    });
-
-    registry.register(jackdaw_panels::DockWindowDescriptor {
-        id: "jackdaw.inspector.materials".into(),
-        name: "Materials".into(),
-        icon: None,
-        default_area: "right_sidebar".into(),
-        priority: 1,
-        build: std::sync::Arc::new(|world, parent| {
-            let icon_font = world
-                .get_resource::<jackdaw_feathers::icons::IconFont>()
-                .map(|f| f.0.clone())
-                .unwrap_or_default();
-            world.spawn((
-                ChildOf(parent),
-                material_browser::material_browser_panel(icon_font),
-            ));
-            world
-                .resource_mut::<material_browser::MaterialBrowserState>()
-                .needs_rescan = true;
-        }),
-    });
-
-    registry.register(jackdaw_panels::DockWindowDescriptor {
-        id: "jackdaw.inspector.resources".into(),
-        name: "Resources".into(),
-        icon: None,
-        default_area: "right_sidebar".into(),
-        priority: 2,
-        build: std::sync::Arc::new(|world, parent| {
-            world.spawn((
-                ChildOf(parent),
-                Node {
-                    flex_grow: 1.0,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                children![(
-                    Text::new("Resources"),
-                    TextFont {
-                        font_size: 11.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.3)),
-                )],
-            ));
-        }),
-    });
-
-    registry.register(jackdaw_panels::DockWindowDescriptor {
-        id: "jackdaw.inspector.systems".into(),
-        name: "Systems".into(),
-        icon: None,
-        default_area: "right_sidebar".into(),
-        priority: 3,
-        build: std::sync::Arc::new(|world, parent| {
-            world.spawn((
-                ChildOf(parent),
-                Node {
-                    flex_grow: 1.0,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                children![(
-                    Text::new("Systems"),
-                    TextFont {
-                        font_size: 11.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.3)),
-                )],
-            ));
-        }),
-    });
 }

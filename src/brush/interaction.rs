@@ -208,8 +208,7 @@ pub(super) fn brush_face_interact(
                                 new: brush.clone(),
                                 label: "Nudge brush face".to_string(),
                             };
-                            history.undo_stack.push(Box::new(cmd));
-                            history.redo_stack.clear();
+                            history.push_executed(Box::new(cmd));
                         }
                     }
                 }
@@ -299,8 +298,7 @@ pub(super) fn brush_face_interact(
                                     new: brush.clone(),
                                     label: "Move brush face".to_string(),
                                 };
-                                history.undo_stack.push(Box::new(cmd));
-                                history.redo_stack.clear();
+                                history.push_executed(Box::new(cmd));
                             }
                         }
                     }
@@ -658,8 +656,7 @@ fn spawn_extruded_brush(
             data: brush_data_from_entity(world, entity),
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(cmd));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(cmd));
     });
 }
 
@@ -728,8 +725,7 @@ pub(super) fn brush_vertex_interact(
                             new: brush.clone(),
                             label: "Nudge brush vertex".to_string(),
                         };
-                        history.undo_stack.push(Box::new(cmd));
-                        history.redo_stack.clear();
+                        history.push_executed(Box::new(cmd));
                     }
                 }
             }
@@ -808,8 +804,7 @@ pub(super) fn brush_vertex_interact(
                         new: brush.clone(),
                         label: label.to_string(),
                     };
-                    history.undo_stack.push(Box::new(cmd));
-                    history.redo_stack.clear();
+                    history.push_executed(Box::new(cmd));
                 }
             }
             drag_state.active = false;
@@ -1083,8 +1078,7 @@ pub(super) fn brush_edge_interact(
                             new: brush.clone(),
                             label: "Nudge brush edge".to_string(),
                         };
-                        history.undo_stack.push(Box::new(cmd));
-                        history.redo_stack.clear();
+                        history.push_executed(Box::new(cmd));
                     }
                 }
             }
@@ -1157,8 +1151,7 @@ pub(super) fn brush_edge_interact(
                         new: brush.clone(),
                         label: "Move brush edge".to_string(),
                     };
-                    history.undo_stack.push(Box::new(cmd));
-                    history.redo_stack.clear();
+                    history.push_executed(Box::new(cmd));
                 }
             }
             drag_state.active = false;
@@ -1494,8 +1487,7 @@ pub(super) fn handle_brush_delete(
                     new: brush.clone(),
                     label: "Remove brush vertex".to_string(),
                 };
-                history.undo_stack.push(Box::new(cmd));
-                history.redo_stack.clear();
+                history.push_executed(Box::new(cmd));
                 brush_selection.vertices.clear();
             }
         }
@@ -1532,8 +1524,7 @@ pub(super) fn handle_brush_delete(
                     new: brush.clone(),
                     label: "Remove brush edge".to_string(),
                 };
-                history.undo_stack.push(Box::new(cmd));
-                history.redo_stack.clear();
+                history.push_executed(Box::new(cmd));
                 brush_selection.edges.clear();
             }
         }
@@ -1561,8 +1552,7 @@ pub(super) fn handle_brush_delete(
                 new: brush.clone(),
                 label: "Remove brush face".to_string(),
             };
-            history.undo_stack.push(Box::new(cmd));
-            history.redo_stack.clear();
+            history.push_executed(Box::new(cmd));
             brush_selection.faces.clear();
         }
         _ => {}
@@ -1781,8 +1771,7 @@ pub(super) fn handle_clip_mode(
                         new: brush.clone(),
                         label: "Clip brush (keep front)".to_string(),
                     };
-                    history.undo_stack.push(Box::new(cmd));
-                    history.redo_stack.clear();
+                    history.push_executed(Box::new(cmd));
                 }
                 ClipMode::KeepBack => {
                     let old = brush.clone();
@@ -1793,8 +1782,7 @@ pub(super) fn handle_clip_mode(
                         new: brush.clone(),
                         label: "Clip brush (keep back)".to_string(),
                     };
-                    history.undo_stack.push(Box::new(cmd));
-                    history.redo_stack.clear();
+                    history.push_executed(Box::new(cmd));
                 }
                 ClipMode::Split => {
                     let old = brush.clone();
@@ -1857,8 +1845,7 @@ pub(super) fn handle_clip_mode(
                             label: "Split brush".to_string(),
                         };
                         let mut history = world.resource_mut::<CommandHistory>();
-                        history.undo_stack.push(Box::new(group));
-                        history.redo_stack.clear();
+                        history.push_executed(Box::new(group));
                     });
                     clip_state.points.clear();
                     clip_state.preview_plane = None;

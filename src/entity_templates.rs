@@ -380,8 +380,7 @@ fn finalize_instantiation(world: &mut World, roots: &[Entity]) {
             snapshots: despawn_cmds,
         };
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(Box::new(cmd));
-        history.redo_stack.clear();
+        history.push_executed(Box::new(cmd));
     }
 }
 

@@ -21,6 +21,10 @@ pub const FACE_GRID_UNSELECTED: Color = Color::srgba(0.294, 0.333, 0.388, 0.1);
 
 // ── Selection & bounding boxes ──
 pub const SELECTION_BBOX: Color = Color::srgba(1.0, 1.0, 0.0, 0.8);
+/// Dim variant for marker gizmos on unselected lights, cameras, and
+/// empty entities. Keeps invisible entities locatable in the viewport
+/// without overpowering selection highlights.
+pub const ENTITY_MARKER_UNSELECTED: Color = Color::srgba(0.55, 0.55, 0.6, 0.35);
 pub const SELECTION_MARQUEE_BG: Color = Color::srgba(0.3, 0.5, 1.0, 0.1);
 pub const SELECTION_MARQUEE_BORDER: Color = Color::srgba(0.3, 0.5, 1.0, 0.7);
 

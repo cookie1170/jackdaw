@@ -412,8 +412,7 @@ fn add_custom_property_from_ui(world: &mut World, source_entity: Entity) {
     cmd.execute(world);
 
     let mut history = world.resource_mut::<CommandHistory>();
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
 
     // Rebuild inspector
     rebuild_inspector(world, source_entity);
@@ -436,8 +435,7 @@ fn remove_custom_property(world: &mut World, source_entity: Entity, property_nam
     cmd.execute(world);
 
     let mut history = world.resource_mut::<CommandHistory>();
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
 
     rebuild_inspector(world, source_entity);
 }
@@ -464,8 +462,7 @@ fn apply_custom_property_with_undo(
     cmd.execute(world);
 
     let mut history = world.resource_mut::<CommandHistory>();
-    history.undo_stack.push(Box::new(cmd));
-    history.redo_stack.clear();
+    history.push_executed(Box::new(cmd));
 }
 
 /// Handle TextEditCommitEvent for custom property numeric/string fields + axis bindings.

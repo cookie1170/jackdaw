@@ -24,6 +24,7 @@ use crate::{
     material_preview::MaterialPreviewState,
     selection::Selection,
 };
+use jackdaw_commands::{CommandGroup, EditorCommand};
 
 pub struct MaterialBrowserPlugin;
 
@@ -658,8 +659,7 @@ fn handle_apply_material(
                     new: new_brush.clone(),
                     label: "Apply material".into(),
                 };
-                history.undo_stack.push(Box::new(cmd));
-                history.redo_stack.clear();
+                history.push_executed(Box::new(cmd));
                 // Deferred AST sync (SetBrush was pushed without execute)
                 commands.queue(move |world: &mut World| {
                     crate::brush::sync_brush_to_ast(world, entity, &new_brush);
@@ -685,6 +685,7 @@ fn handle_apply_material(
                 }
             })
             .collect();
+        let mut group_commands: Vec<Box<dyn EditorCommand>> = Vec::new();
         for entity in targets {
             if let Ok(mut brush) = brushes.get_mut(entity) {
                 let old = brush.clone();
@@ -698,8 +699,7 @@ fn handle_apply_material(
                     new: new_brush.clone(),
                     label: "Apply material".into(),
                 };
-                history.undo_stack.push(Box::new(cmd));
-                history.redo_stack.clear();
+                group_commands.push(Box::new(cmd));
                 // Deferred AST sync (SetBrush was pushed without execute)
                 commands.queue(move |world: &mut World| {
                     crate::brush::sync_brush_to_ast(world, entity, &new_brush);
@@ -708,6 +708,12 @@ fn handle_apply_material(
                     .entity(entity)
                     .insert(crate::inspector::InspectorDirty);
             }
+        }
+        if !group_commands.is_empty() {
+            history.push_executed(Box::new(CommandGroup {
+                commands: group_commands,
+                label: "Apply material".into(),
+            }));
         }
     }
 }

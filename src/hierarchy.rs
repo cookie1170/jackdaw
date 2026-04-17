@@ -82,6 +82,7 @@ impl Plugin for HierarchyPlugin {
             .add_observer(handle_inline_rename_commit)
             .add_observer(on_root_entity_added)
             .add_observer(on_entity_reparented)
+            .add_observer(on_entity_deparented)
             .add_observer(on_tree_node_expanded)
             .add_observer(on_tree_row_clicked)
             .add_observer(on_entity_removed)
@@ -443,6 +444,30 @@ fn on_entity_reparented(
     });
 }
 
+/// When ChildOf is removed (entity deparented back to root, e.g. via undo of
+/// a reparent), move its tree row back to the root container. Without this,
+/// the tree UI shows stale parent information after an undo.
+fn on_entity_deparented(
+    trigger: On<Remove, ChildOf>,
+    mut commands: Commands,
+    tree_index: Res<TreeIndex>,
+    container: Option<Single<Entity, With<HierarchyTreeContainer>>>,
+    editor_check: Query<(), Or<(With<EditorEntity>, With<EditorHidden>)>>,
+    tree_node_check: Query<(), With<TreeNode>>,
+) {
+    let entity = trigger.event_target();
+    if editor_check.contains(entity) || tree_node_check.contains(entity) {
+        return;
+    }
+    let Some(container) = container else {
+        return;
+    };
+    let root_container = *container;
+    if let Some(tree_entity) = tree_index.get(entity) {
+        commands.entity(tree_entity).insert(ChildOf(root_container));
+    }
+}
+
 /// When an entity's Name is removed, despawn its tree row.
 fn on_entity_removed(
     trigger: On<Despawn, Name>,
@@ -757,6 +782,7 @@ fn handle_hierarchy_right_click(
     tree_row_contents: Query<(Entity, &ChildOf), With<TreeRowContent>>,
     tree_nodes: Query<&TreeNode>,
     computed_nodes: Query<(&ComputedNode, &UiGlobalTransform), With<TreeRowContent>>,
+    extension_add_entries: Query<&jackdaw_api::RegisteredMenuEntry>,
 ) {
     if !mouse.just_pressed(MouseButton::Right) {
         return;
@@ -820,25 +846,49 @@ fn handle_hierarchy_right_click(
         });
     }
 
-    let menu_items = &[
-        ("hierarchy.focus", "Focus                    F"),
-        ("hierarchy.rename", "Rename              F2"),
-        ("hierarchy.duplicate", "Duplicate        Ctrl+D"),
-        ("hierarchy.delete", "Delete             Del"),
-        ("---", ""),
-        ("hierarchy.save_template", "Save as Template..."),
-        ("---", ""),
-        ("hierarchy.add_cube", "Add Child Cube"),
-        ("hierarchy.add_sphere", "Add Child Sphere"),
-        ("hierarchy.add_light", "Add Child Light"),
-        ("hierarchy.add_empty", "Add Child Empty"),
+    // Built-in context menu items. The "Add Child ..." entries are the
+    // parent-aware variant: they spawn the entity and reparent it under
+    // the right-clicked target.
+    let mut owned_items: Vec<(String, String)> = vec![
+        (
+            "hierarchy.focus".into(),
+            "Focus                    F".into(),
+        ),
+        ("hierarchy.rename".into(), "Rename              F2".into()),
+        (
+            "hierarchy.duplicate".into(),
+            "Duplicate        Ctrl+D".into(),
+        ),
+        ("hierarchy.delete".into(), "Delete             Del".into()),
+        (
+            "hierarchy.save_template".into(),
+            "Save as Template...".into(),
+        ),
+        ("hierarchy.add_cube".into(), "Add Child Cube".into()),
+        ("hierarchy.add_sphere".into(), "Add Child Sphere".into()),
+        ("hierarchy.add_light".into(), "Add Child Light".into()),
+        ("hierarchy.add_empty".into(), "Add Child Empty".into()),
     ];
 
-    // Filter out separators for spawn_context_menu (it doesn't handle them)
-    let items: Vec<(&str, &str)> = menu_items
+    // Append extension-contributed Add entries from the same source the
+    // toolbar Add menu and the Add Entity picker use. One
+    // `register_menu_entry` call therefore surfaces in all three places.
+    let mut ext_rows: Vec<(String, String)> = extension_add_entries
         .iter()
-        .filter(|(action, _)| *action != "---")
-        .copied()
+        .filter(|entry| entry.menu == "Add")
+        .map(|entry| {
+            (
+                format!("op:{}", entry.operator_id),
+                format!("Add {}", entry.label),
+            )
+        })
+        .collect();
+    ext_rows.sort_by(|a, b| a.1.cmp(&b.1));
+    owned_items.extend(ext_rows);
+
+    let items: Vec<(&str, &str)> = owned_items
+        .iter()
+        .map(|(a, l)| (a.as_str(), l.as_str()))
         .collect();
 
     let menu = spawn_context_menu(&mut commands, cursor_pos, Some(target), &items);
@@ -957,6 +1007,16 @@ fn on_context_menu_action(
                 ));
             }
         }
+        action if action.starts_with("op:") => {
+            // Extension-contributed Add entry. Dispatch through the same
+            // path as the toolbar Add menu and the Add Entity picker so
+            // operators behave identically regardless of which surface
+            // invoked them.
+            let operator_id = action.strip_prefix("op:").unwrap().to_string();
+            commands.queue(move |world: &mut World| {
+                jackdaw_api::lifecycle::dispatch_operator_by_id(world, &operator_id, true);
+            });
+        }
         _ => {}
     }
 }
@@ -988,14 +1048,14 @@ fn on_visibility_toggled(
         field_path: String::new(),
         old_value: old_json,
         new_value: new_json,
+        was_derived: false,
     };
 
     commands.queue(move |world: &mut World| {
         let mut cmd = Box::new(cmd);
         cmd.execute(world);
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(cmd);
-        history.redo_stack.clear();
+        history.push_executed(cmd);
     });
 }
 
@@ -1227,12 +1287,12 @@ fn on_tree_row_renamed(event: On<TreeRowRenamed>, mut commands: Commands, names:
             field_path: String::new(),
             old_value: serde_json::Value::String(old_name),
             new_value: serde_json::Value::String(new_name),
+            was_derived: false,
         };
         let mut cmd = Box::new(cmd);
         cmd.execute(world);
         let mut history = world.resource_mut::<CommandHistory>();
-        history.undo_stack.push(cmd);
-        history.redo_stack.clear();
+        history.push_executed(cmd);
     });
 }
 
