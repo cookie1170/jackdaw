@@ -1,4 +1,5 @@
 use bevy::{
+    asset::{embedded_asset, load_embedded_asset},
     camera::RenderTarget,
     core_pipeline::oit::OrderIndependentTransparencySettings,
     image::ImageSampler,
@@ -61,6 +62,7 @@ impl Plugin for ViewportPlugin {
         app.add_plugins((JackdawCameraPlugin, InfiniteGridPlugin))
             .init_resource::<CameraBookmarks>()
             .init_resource::<CameraFlyActive>()
+            .insert_resource(GlobalAmbientLight::NONE)
             .add_systems(
                 OnEnter(crate::AppState::Editor),
                 setup_viewport.after(crate::spawn_layout),
@@ -75,6 +77,14 @@ impl Plugin for ViewportPlugin {
                     .run_if(in_state(crate::AppState::Editor))
                     .run_if(not(crate::no_dialog_open)),
             );
+        embedded_asset!(
+            app,
+            "../assets/environment_maps/voortrekker_interior_1k_diffuse.ktx2"
+        );
+        embedded_asset!(
+            app,
+            "../assets/environment_maps/voortrekker_interior_1k_specular.ktx2"
+        );
     }
 }
 
@@ -82,6 +92,7 @@ pub(crate) fn setup_viewport(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     viewport_query: Single<Entity, With<SceneViewport>>,
+    assets: Res<AssetServer>,
 ) {
     // Create render-target image
     let size = Extent3d {
@@ -107,6 +118,18 @@ pub(crate) fn setup_viewport(
             MainViewportCamera,
             crate::EditorEntity,
             Camera3d::default(),
+            EnvironmentMapLight {
+                diffuse_map: load_embedded_asset!(
+                    &*assets,
+                    "../assets/environment_maps/voortrekker_interior_1k_diffuse.ktx2"
+                ),
+                specular_map: load_embedded_asset!(
+                    &*assets,
+                    "../assets/environment_maps/voortrekker_interior_1k_specular.ktx2"
+                ),
+                intensity: 2000.0,
+                ..default()
+            },
             // Needed for translucent materials to work correctly
             OrderIndependentTransparencySettings::default(),
             Camera {

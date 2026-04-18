@@ -39,7 +39,6 @@ impl Plugin for MaterialBrowserPlugin {
                     |world: &mut World| crate::asset_catalog::load_catalog(world),
                     scan_material_definitions,
                     |world: &mut World| crate::asset_catalog::save_catalog(world),
-                    crate::material_preview::setup_material_preview_scene,
                 )
                     .chain(),
             )
@@ -53,8 +52,6 @@ impl Plugin for MaterialBrowserPlugin {
                     update_preview_area,
                     poll_material_browser_folder,
                     poll_texture_slot_pick,
-                    crate::material_preview::update_preview_camera_transform,
-                    crate::material_preview::update_active_preview_material,
                 )
                     .run_if(in_state(crate::AppState::Editor)),
             )

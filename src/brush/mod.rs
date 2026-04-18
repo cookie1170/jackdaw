@@ -163,6 +163,7 @@ impl Plugin for BrushPlugin {
             .init_resource::<EdgeDragState>()
             .init_resource::<ClipState>()
             .init_resource::<LastUsedMaterial>()
+            .add_plugins(mesh::MeshPlugin)
             .add_systems(
                 OnEnter(crate::AppState::Editor),
                 mesh::setup_default_materials,

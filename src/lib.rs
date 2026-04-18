@@ -137,6 +137,7 @@ impl Plugin for EditorPlugin {
                 custom_properties::CustomPropertiesPlugin,
                 entity_templates::EntityTemplatesPlugin,
                 brush::BrushPlugin,
+                material_preview::MaterialPreviewPlugin,
             ))
             .add_plugins((
                 material_browser::MaterialBrowserPlugin,

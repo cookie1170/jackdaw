@@ -1,9 +1,6 @@
 use bevy::{
-    asset::RenderAssetUsages,
-    image::{
-        CompressedImageFormats, ImageAddressMode, ImageFilterMode, ImageSampler,
-        ImageSamplerDescriptor, ImageType,
-    },
+    asset::{embedded_asset, load_embedded_asset},
+    image::{ImageAddressMode, ImageFilterMode, ImageLoaderSettings},
     light::{NotShadowCaster, NotShadowReceiver},
     math::Affine2,
     mesh::{Indices, PrimitiveTopology},
@@ -19,10 +16,18 @@ use jackdaw_geometry::{
     compute_brush_geometry, compute_face_tangent_axes, compute_face_uvs, triangulate_face,
 };
 
+pub(super) struct MeshPlugin;
+
+impl Plugin for MeshPlugin {
+    fn build(&self, app: &mut App) {
+        embedded_asset!(app, "../../assets/textures/jd_grid.png");
+    }
+}
+
 pub(super) fn setup_default_materials(
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut images: ResMut<Assets<Image>>,
     mut palette: ResMut<BrushMaterialPalette>,
+    assets: Res<AssetServer>,
 ) {
     let defaults = default_style::BRUSH_PALETTE;
     for color in defaults {
@@ -40,25 +45,19 @@ pub(super) fn setup_default_materials(
     }
 
     // Create grid-textured default materials with nearest-neighbor sampling
-    let grid_bytes = include_bytes!("../../assets/textures/jd_grid.png");
-    let grid_image = Image::from_buffer(
-        grid_bytes,
-        ImageType::Extension("png"),
-        CompressedImageFormats::NONE,
-        true,
-        ImageSampler::Descriptor(ImageSamplerDescriptor {
-            mag_filter: ImageFilterMode::Nearest,
-            min_filter: ImageFilterMode::Nearest,
-            mipmap_filter: ImageFilterMode::Nearest,
-            address_mode_u: ImageAddressMode::Repeat,
-            address_mode_v: ImageAddressMode::Repeat,
-            address_mode_w: ImageAddressMode::Repeat,
-            ..default()
-        }),
-        RenderAssetUsages::default(),
-    )
-    .expect("Failed to decode jd_grid.png");
-    let grid_handle = images.add(grid_image);
+    let grid_handle = load_embedded_asset!(
+        &*assets,
+        "../../assets/textures/jd_grid.png",
+        |settings: &mut ImageLoaderSettings| {
+            let sampler = settings.sampler.get_or_init_descriptor();
+            sampler.mag_filter = ImageFilterMode::Nearest;
+            sampler.min_filter = ImageFilterMode::Nearest;
+            sampler.mipmap_filter = ImageFilterMode::Nearest;
+            sampler.address_mode_u = ImageAddressMode::Repeat;
+            sampler.address_mode_v = ImageAddressMode::Repeat;
+            sampler.address_mode_w = ImageAddressMode::Repeat;
+        }
+    );
 
     // Tile the 2×2 checker at 0.25 world-unit spacing (matching default grid)
     let uv_tile = Affine2::from_scale(Vec2::splat(2.0));

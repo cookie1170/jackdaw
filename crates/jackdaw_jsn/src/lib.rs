@@ -48,7 +48,7 @@ impl Plugin for JsnPlugin {
             .register_type::<Terrain>()
             .init_asset_loader::<JsnAssetLoader>();
         if self.runtime_mesh_rebuild {
-            app.add_systems(Update, mesh_rebuild::rebuild_brush_meshes);
+            app.add_plugins(mesh_rebuild::MeshRebuildPlugin);
         }
     }
 }
