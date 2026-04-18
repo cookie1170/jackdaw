@@ -9,7 +9,7 @@ use jackdaw_feathers::{
     tokens,
     tree_view::{ROW_BG, TreeRowStyle, tree_row},
 };
-use jackdaw_widgets::context_menu::{ContextMenuAction, ContextMenuCloseSet, ContextMenuState};
+use jackdaw_widgets::context_menu::{ContextMenuAction, ContextMenuCloseSystems, ContextMenuState};
 use jackdaw_widgets::tree_view::{
     EntityCategory, TreeChildrenPopulated, TreeFocused, TreeIndex, TreeNode, TreeNodeExpanded,
     TreeRowChildren, TreeRowClicked, TreeRowContent, TreeRowDropped, TreeRowDroppedOnRoot,
@@ -70,7 +70,7 @@ impl Plugin for HierarchyPlugin {
                     apply_hierarchy_filter,
                     cancel_inline_rename,
                     auto_focus_inline_rename,
-                    handle_hierarchy_right_click.after(ContextMenuCloseSet),
+                    handle_hierarchy_right_click.after(ContextMenuCloseSystems),
                     populate_template_dialog,
                     toggle_show_all_button,
                     update_show_all_button_appearance,

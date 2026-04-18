@@ -85,6 +85,7 @@ impl<S: Component> Plugin for PhysicsOverlaysPlugin<S> {
             .init_gizmo_group::<ColliderGizmoGroup>()
             .add_systems(
                 PostUpdate,
+                // TODO: Use `JackdawDrawSystems` here
                 (draw_collider_gizmos::<S>, draw_hierarchy_arrows::<S>)
                     .after(bevy::transform::TransformSystems::Propagate),
             );

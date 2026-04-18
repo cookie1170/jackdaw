@@ -5,55 +5,88 @@ use bevy::prelude::*;
 use jackdaw_jsn::BrushGroup;
 
 use crate::brush::{Brush, BrushEditMode, BrushMeshCache, EditMode};
-use crate::colors;
 use crate::draw_brush::{CutPreviewFace, CutPreviewHidden, CutResultPreviewMesh};
 use crate::selection::Selected;
 use crate::snapping::SnapSettings;
 use crate::viewport_overlays::OverlaySettings;
 use crate::viewport_select::GroupEditState;
+use crate::{JackdawDrawSystems, default_style};
 
 /// Gizmo group for face grid lines. Rendered slightly in front of geometry.
 #[derive(Default, Reflect, GizmoConfigGroup)]
 pub struct FaceGridGizmoGroup;
 
-/// Gizmo group for brush edge wireframes. Rendered in front of both geometry
+/// Gizmo group for unselected brush edge wireframes. Rendered in front of both geometry
 /// and face grid lines to ensure edges are always clearly visible.
 #[derive(Default, Reflect, GizmoConfigGroup)]
-pub struct BrushEdgeGizmoGroup;
+pub struct BrushWireframeUnselectedGizmoGroup;
+
+/// Gizmo group for selecetd brush edge wireframes. Rendered in front of both geometry
+/// and face grid lines to ensure edges are always clearly visible.
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct BrushWireframeSelectedGizmoGroup;
+
+/// Gizmo group for unselected brush outlines. Like wireframe, but not rendered in front of geometry.
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct BrushOutlineUnselectedGizmoGroup;
+
+/// Gizmo group for selected brush outlines. Like wireframe, but not rendered in front of geometry.
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct BrushOutlineSelectedGizmoGroup;
 
 pub struct FaceGridPlugin;
 
 impl Plugin for FaceGridPlugin {
     fn build(&self, app: &mut App) {
         app.init_gizmo_group::<FaceGridGizmoGroup>()
-            .init_gizmo_group::<BrushEdgeGizmoGroup>()
+            .init_gizmo_group::<BrushWireframeUnselectedGizmoGroup>()
+            .init_gizmo_group::<BrushWireframeSelectedGizmoGroup>()
+            .init_gizmo_group::<BrushOutlineUnselectedGizmoGroup>()
+            .init_gizmo_group::<BrushOutlineSelectedGizmoGroup>()
             .add_systems(Startup, configure_face_grid_gizmos)
             .add_systems(
                 PostUpdate,
                 (
-                    draw_brush_edges,
+                    draw_brush_wireframe,
                     draw_face_grids,
                     draw_cut_preview_edges,
                     draw_cut_preview_grids,
                 )
-                    .after(bevy::transform::TransformSystems::Propagate)
-                    .after(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate)
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .in_set(JackdawDrawSystems),
             );
     }
 }
 
 fn configure_face_grid_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
-    let (config, _) = config_store.config_mut::<FaceGridGizmoGroup>();
-    config.depth_bias = -0.5;
+    // configured in draw order
 
-    let (config, _) = config_store.config_mut::<BrushEdgeGizmoGroup>();
+    let (config, _) = config_store.config_mut::<BrushWireframeSelectedGizmoGroup>();
     config.depth_bias = -1.0;
+    config.line = default_style::WIREFRAME_LINE_SELECTED;
+
+    let (config, _) = config_store.config_mut::<BrushWireframeUnselectedGizmoGroup>();
+    config.depth_bias = -0.9999;
+    config.line = default_style::WIREFRAME_LINE_UNSELECTED;
+
+    let (config, _) = config_store.config_mut::<BrushOutlineSelectedGizmoGroup>();
+    config.depth_bias = -0.0012;
+    config.line = default_style::OUTLINE_LINE_SELECTED;
+
+    let (config, _) = config_store.config_mut::<BrushOutlineUnselectedGizmoGroup>();
+    config.depth_bias = -0.0011;
+    config.line = default_style::OUTLINE_LINE_UNSELECTED;
+
+    let (config, _) = config_store.config_mut::<FaceGridGizmoGroup>();
+    config.depth_bias = -0.001;
+    config.line = default_style::FACE_GRID_LINE;
 }
 
-/// Draw wireframe edges on all brushes (bright cyan on selected, subtle grey on unselected).
-fn draw_brush_edges(
-    mut gizmos: Gizmos<BrushEdgeGizmoGroup>,
+/// Draw brush wireframe and outlines. Will do special treatment for the currently selected brushes.
+fn draw_brush_wireframe(
+    mut wireframe_unselected: Gizmos<BrushWireframeUnselectedGizmoGroup>,
+    mut wireframe_selected: Gizmos<BrushWireframeSelectedGizmoGroup>,
+    mut outline_unselected: Gizmos<BrushOutlineUnselectedGizmoGroup>,
+    mut outline_selected: Gizmos<BrushOutlineSelectedGizmoGroup>,
     settings: Res<OverlaySettings>,
     edit_mode: Res<EditMode>,
     brushes: Query<
@@ -72,13 +105,9 @@ fn draw_brush_edges(
     group_edit: Res<GroupEditState>,
     brush_groups: Query<(), With<BrushGroup>>,
 ) {
-    if !settings.show_brush_wireframe {
-        return;
-    }
-
     let in_clip_mode = matches!(*edit_mode, EditMode::BrushEdit(BrushEditMode::Clip));
 
-    for (entity, brush, cache, global_tf, is_selected, inherited_vis) in &brushes {
+    for (entity, brush, cache, global_tf, is_brush_selected, inherited_vis) in &brushes {
         if !inherited_vis.get() {
             continue;
         }
@@ -92,36 +121,38 @@ fn draw_brush_edges(
             }
         }
 
-        let parent_selected = parents
+        let is_parent_selected = parents
             .get(entity)
             .is_ok_and(|child_of| selected_query.contains(child_of.0));
         let in_active_group = group_edit
             .active_group
             .is_some_and(|group| parents.get(entity).is_ok_and(|c| c.0 == group));
+        let is_selected = is_brush_selected || in_active_group || is_parent_selected;
 
-        let color: Color = if is_selected {
+        // we use the same color for wireframe and outline, outlines are just thicker and not drawn in front of geo
+        let color: Color = if is_brush_selected {
             if in_clip_mode {
-                colors::WIREFRAME_SELECTED_CLIP
+                default_style::WIREFRAME_OUTLINE_SELECTED_CLIP
             } else {
-                colors::WIREFRAME_SELECTED
+                default_style::WIREFRAME_OUTLINE_SELECTED
             }
         } else if in_active_group {
-            colors::WIREFRAME_GROUP_EDIT
-        } else if parent_selected {
+            default_style::WIREFRAME_OUTLINE_GROUP_EDIT
+        } else if is_parent_selected {
             if in_clip_mode {
-                colors::WIREFRAME_SELECTED_CLIP
+                default_style::WIREFRAME_OUTLINE_SELECTED_CLIP
             } else {
-                colors::WIREFRAME_SELECTED
+                default_style::WIREFRAME_OUTLINE_SELECTED
             }
         } else {
-            colors::WIREFRAME_UNSELECTED
+            default_style::WIREFRAME_OUTLINE_UNSELECTED
         };
 
         // Determine if we should hide cap-only edges (internal cut boundaries)
         let in_brush_group = parents
             .get(entity)
             .is_ok_and(|child_of| brush_groups.contains(child_of.0));
-        let hide_cap_edges = in_brush_group && !is_selected;
+        let hide_cap_edges = in_brush_group && !is_brush_selected;
 
         // Pre-collect non-cap edges (edges on at least one original face)
         let non_cap_edges: Option<HashSet<(usize, usize)>> = if hide_cap_edges {
@@ -155,7 +186,20 @@ fn draw_brush_edges(
                     }
                     let wa = global_tf.transform_point(cache.vertices[a]);
                     let wb = global_tf.transform_point(cache.vertices[b]);
-                    gizmos.line(wa, wb, color);
+                    if is_selected {
+                        // selected brushes *always* draw their outlines
+                        outline_selected.line(wa, wb, color);
+                        if settings.show_brush_wireframe {
+                            wireframe_selected.line(wa, wb, color);
+                        }
+                    } else {
+                        if settings.show_brush_outline {
+                            outline_unselected.line(wa, wb, color);
+                        }
+                        if settings.show_brush_wireframe {
+                            wireframe_unselected.line(wa, wb, color);
+                        }
+                    }
                 }
             }
         }
@@ -201,9 +245,9 @@ fn draw_face_grids(
                 .is_ok_and(|child_of| selected_query.contains(child_of.0));
         let effectively_selected = is_selected || parent_selected;
         let color = if effectively_selected {
-            colors::FACE_GRID_SELECTED
+            default_style::FACE_GRID_SELECTED
         } else {
-            colors::FACE_GRID_UNSELECTED
+            default_style::FACE_GRID_UNSELECTED
         };
         for (face_idx, face_data) in brush.faces.iter().enumerate() {
             if face_data.material == Handle::default() {
@@ -278,8 +322,7 @@ fn draw_face_grids(
                     let a = reconstruct_3d(p0_2d, axis_u, axis_v, plane_axis, plane_d, normal_arr);
                     let b = reconstruct_3d(p1_2d, axis_u, axis_v, plane_axis, plane_d, normal_arr);
                     if let (Some(a), Some(b)) = (a, b) {
-                        let offset = world_normal * 0.002;
-                        gizmos.line(a + offset, b + offset, color);
+                        gizmos.line(a, b, color);
                     }
                 }
                 u += grid_size;
@@ -292,8 +335,7 @@ fn draw_face_grids(
                     let a = reconstruct_3d(p0_2d, axis_u, axis_v, plane_axis, plane_d, normal_arr);
                     let b = reconstruct_3d(p1_2d, axis_u, axis_v, plane_axis, plane_d, normal_arr);
                     if let (Some(a), Some(b)) = (a, b) {
-                        let offset = world_normal * 0.002;
-                        gizmos.line(a + offset, b + offset, color);
+                        gizmos.line(a, b, color);
                     }
                 }
                 v += grid_size;
@@ -304,7 +346,7 @@ fn draw_face_grids(
 
 /// Draw wireframe edges on cut-preview fragment faces.
 fn draw_cut_preview_edges(
-    mut gizmos: Gizmos<BrushEdgeGizmoGroup>,
+    mut gizmos: Gizmos<BrushWireframeUnselectedGizmoGroup>,
     settings: Res<OverlaySettings>,
     previews: Query<&CutPreviewFace, With<CutResultPreviewMesh>>,
 ) {
@@ -312,7 +354,7 @@ fn draw_cut_preview_edges(
         return;
     }
 
-    let color: Color = colors::WIREFRAME_CUT_PREVIEW;
+    let color: Color = default_style::WIREFRAME_OUTLINE_CUT_PREVIEW;
 
     for face in &previews {
         if face.is_default_material || face.is_cap {
@@ -342,7 +384,7 @@ fn draw_cut_preview_grids(
     }
 
     let grid_size = snap.grid_size();
-    let color = colors::FACE_GRID_SELECTED;
+    let color = default_style::FACE_GRID_SELECTED;
 
     for face in &previews {
         if face.is_default_material || face.is_cap {

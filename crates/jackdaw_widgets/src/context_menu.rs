@@ -4,7 +4,7 @@ use bevy::prelude::*;
 /// Order your context menu openers `.after(ContextMenuCloseSet)` to avoid
 /// the close system immediately despawning a just-created menu.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ContextMenuCloseSet;
+pub struct ContextMenuCloseSystems;
 
 pub struct ContextMenuPlugin;
 
@@ -12,7 +12,8 @@ impl Plugin for ContextMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (close_context_menu_on_click, close_context_menu_on_escape).in_set(ContextMenuCloseSet),
+            (close_context_menu_on_click, close_context_menu_on_escape)
+                .in_set(ContextMenuCloseSystems),
         );
     }
 }

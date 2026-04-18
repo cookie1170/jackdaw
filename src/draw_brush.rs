@@ -7,7 +7,7 @@ use bevy::{
     ui::UiGlobalTransform,
 };
 
-use crate::colors;
+use crate::default_style;
 use crate::{
     EditorEntity,
     brush::{BrushFaceEntity, BrushMaterialPalette},
@@ -298,7 +298,7 @@ impl Plugin for DrawBrushPlugin {
                     extend_face_to_brush,
                 )
                     .chain()
-                    .in_set(crate::EditorInteraction),
+                    .in_set(crate::EditorInteractionSystems),
             )
             .add_systems(
                 Update,
@@ -861,8 +861,8 @@ fn draw_brush_preview(
     };
 
     let color = match active.mode {
-        DrawMode::Add => colors::DRAW_MODE,
-        DrawMode::Cut => colors::CUT_MODE,
+        DrawMode::Add => default_style::DRAW_MODE,
+        DrawMode::Cut => default_style::CUT_MODE,
     };
 
     // Highlight the append target brush so the user knows they're in hull mode
@@ -873,7 +873,7 @@ fn draw_brush_preview(
                 for i in 0..polygon.len() {
                     let a = brush_tf.transform_point(verts[polygon[i]]);
                     let b = brush_tf.transform_point(verts[polygon[(i + 1) % polygon.len()]]);
-                    gizmos.line(a, b, colors::DRAW_MODE);
+                    gizmos.line(a, b, default_style::DRAW_MODE);
                 }
             }
         }
@@ -1335,7 +1335,7 @@ fn draw_plane_grid(
             if alpha <= 0.0 {
                 continue;
             }
-            let grid_color = colors::DRAW_PLANE_GRID.with_alpha(alpha);
+            let grid_color = default_style::DRAW_PLANE_GRID.with_alpha(alpha);
 
             gizmos.line(
                 pt - plane.axis_u * cross_size,
@@ -1670,19 +1670,23 @@ fn manage_draw_preview_mesh(
     let material = match active.mode {
         DrawMode::Add => cached_add_material.get_or_insert_with(|| {
             materials.add(StandardMaterial {
-                base_color: colors::DRAW_PREVIEW_MESH,
+                base_color: default_style::DRAW_PREVIEW_MESH,
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
+                double_sided: true,
                 cull_mode: None,
+                perceptual_roughness: 1.0,
                 ..default()
             })
         }),
         DrawMode::Cut => cached_cut_material.get_or_insert_with(|| {
             materials.add(StandardMaterial {
-                base_color: colors::CUT_PREVIEW_MESH,
+                base_color: default_style::CUT_PREVIEW_MESH,
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
+                double_sided: true,
                 cull_mode: None,
+                perceptual_roughness: 1.0,
                 ..default()
             })
         }),

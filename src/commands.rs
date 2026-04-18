@@ -21,7 +21,7 @@ impl Plugin for CommandHistoryPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CommandHistory::default()).add_systems(
             Update,
-            handle_undo_redo_keys.in_set(crate::EditorInteraction),
+            handle_undo_redo_keys.in_set(crate::EditorInteractionSystems),
         );
     }
 }

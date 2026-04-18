@@ -1,9 +1,7 @@
 use bevy::{
-    asset::RenderAssetUsages,
-    image::{
-        CompressedImageFormats, ImageAddressMode, ImageFilterMode, ImageSampler,
-        ImageSamplerDescriptor, ImageType,
-    },
+    asset::{embedded_asset, load_embedded_asset},
+    image::{ImageAddressMode, ImageFilterMode, ImageLoaderSettings},
+    light::{NotShadowCaster, NotShadowReceiver},
     math::Affine2,
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
@@ -11,19 +9,27 @@ use bevy::{
 
 use super::{BrushFaceEntity, BrushMaterialPalette, BrushMeshCache, BrushPreview};
 use crate::NonSerializable;
-use crate::colors;
+use crate::default_style;
 use crate::draw_brush::DrawBrushState;
 use crate::selection::Selected;
 use jackdaw_geometry::{
     compute_brush_geometry, compute_face_tangent_axes, compute_face_uvs, triangulate_face,
 };
 
+pub(super) struct MeshPlugin;
+
+impl Plugin for MeshPlugin {
+    fn build(&self, app: &mut App) {
+        embedded_asset!(app, "../../assets/textures/jd_grid.png");
+    }
+}
+
 pub(super) fn setup_default_materials(
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut images: ResMut<Assets<Image>>,
     mut palette: ResMut<BrushMaterialPalette>,
+    assets: Res<AssetServer>,
 ) {
-    let defaults = colors::BRUSH_PALETTE;
+    let defaults = default_style::BRUSH_PALETTE;
     for color in defaults {
         palette.materials.push(materials.add(StandardMaterial {
             base_color: color.with_alpha(1.0),
@@ -39,46 +45,33 @@ pub(super) fn setup_default_materials(
     }
 
     // Create grid-textured default materials with nearest-neighbor sampling
-    let grid_bytes = include_bytes!("../../assets/textures/jd_grid.png");
-    let grid_image = Image::from_buffer(
-        grid_bytes,
-        ImageType::Extension("png"),
-        CompressedImageFormats::NONE,
-        true,
-        ImageSampler::Descriptor(ImageSamplerDescriptor {
-            mag_filter: ImageFilterMode::Nearest,
-            min_filter: ImageFilterMode::Nearest,
-            mipmap_filter: ImageFilterMode::Nearest,
-            address_mode_u: ImageAddressMode::Repeat,
-            address_mode_v: ImageAddressMode::Repeat,
-            address_mode_w: ImageAddressMode::Repeat,
-            ..default()
-        }),
-        RenderAssetUsages::default(),
-    )
-    .expect("Failed to decode jd_grid.png");
-    let grid_handle = images.add(grid_image);
+    let grid_handle = load_embedded_asset!(
+        &*assets,
+        "../../assets/textures/jd_grid.png",
+        |settings: &mut ImageLoaderSettings| {
+            let sampler = settings.sampler.get_or_init_descriptor();
+            sampler.mag_filter = ImageFilterMode::Nearest;
+            sampler.min_filter = ImageFilterMode::Nearest;
+            sampler.mipmap_filter = ImageFilterMode::Nearest;
+            sampler.address_mode_u = ImageAddressMode::Repeat;
+            sampler.address_mode_v = ImageAddressMode::Repeat;
+            sampler.address_mode_w = ImageAddressMode::Repeat;
+        }
+    );
 
     // Tile the 2×2 checker at 0.25 world-unit spacing (matching default grid)
     let uv_tile = Affine2::from_scale(Vec2::splat(2.0));
 
     palette.default_material = materials.add(StandardMaterial {
-        base_color: Color::WHITE.with_alpha(colors::DEFAULT_MATERIAL_ALPHA),
+        base_color: default_style::DEFAULT_MATERIAL_COLOR,
         base_color_texture: Some(grid_handle.clone()),
         alpha_mode: AlphaMode::Blend,
         uv_transform: uv_tile,
         ..default()
     });
     palette.default_selected_material = materials.add(StandardMaterial {
-        base_color: Color::WHITE.with_alpha(colors::DEFAULT_MATERIAL_SELECTED_ALPHA),
+        base_color: default_style::DEFAULT_MATERIAL_SELECTED_COLOR,
         base_color_texture: Some(grid_handle.clone()),
-        alpha_mode: AlphaMode::Blend,
-        uv_transform: uv_tile,
-        ..default()
-    });
-    palette.default_preview_material = materials.add(StandardMaterial {
-        base_color: Color::WHITE.with_alpha(colors::DEFAULT_MATERIAL_PREVIEW_ALPHA),
-        base_color_texture: Some(grid_handle),
         alpha_mode: AlphaMode::Blend,
         uv_transform: uv_tile,
         ..default()
@@ -173,11 +166,10 @@ pub fn regenerate_brush_meshes(
             let mesh_handle = meshes.add(mesh);
 
             // Use the face's material handle if set, otherwise fall back to grid default
-            let material = if face_data.material != Handle::default() {
+            let is_default = face_data.material == Handle::default();
+            let material = if !is_default {
                 face_data.material.clone()
-            } else if preview.is_some() {
-                palette.default_preview_material.clone()
-            } else if effectively_selected {
+            } else if effectively_selected || preview.is_some() {
                 palette.default_selected_material.clone()
             } else {
                 palette.default_material.clone()
@@ -196,6 +188,11 @@ pub fn regenerate_brush_meshes(
                     NonSerializable,
                 ))
                 .id();
+            if is_default {
+                commands
+                    .entity(face_entity)
+                    .insert((NotShadowCaster, NotShadowReceiver));
+            }
 
             face_entities.push(face_entity);
         }
@@ -261,9 +258,7 @@ pub(super) fn ensure_brush_face_materials(
                 .get(entity)
                 .is_ok_and(|child_of| selected_query.contains(child_of.0));
         let effectively_selected = is_selected || parent_selected;
-        let target = if has_preview {
-            &palette.default_preview_material
-        } else if effectively_selected {
+        let target = if effectively_selected || has_preview {
             &palette.default_selected_material
         } else {
             &palette.default_material

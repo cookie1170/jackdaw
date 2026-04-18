@@ -4,7 +4,7 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions},
 };
 
-use crate::colors;
+use crate::default_style;
 use crate::{
     commands::{CommandHistory, SetTransform},
     modal_transform::ModalTransformState,
@@ -87,7 +87,7 @@ impl Plugin for TransformGizmosPlugin {
                     handle_gizmo_drag,
                 )
                     .chain()
-                    .in_set(crate::EditorInteraction),
+                    .in_set(crate::EditorInteractionSystems),
             )
             .add_systems(
                 Update,
@@ -578,9 +578,9 @@ fn gizmo_rotation(global_tf: &GlobalTransform, space: &GizmoSpace) -> Quat {
 fn axis_color(axis: GizmoAxis, active: Option<GizmoAxis>, dragging: bool) -> Color {
     let is_active = active == Some(axis);
     let (normal, bright) = match axis {
-        GizmoAxis::X => (colors::AXIS_X, colors::AXIS_X_BRIGHT),
-        GizmoAxis::Y => (colors::AXIS_Y, colors::AXIS_Y_BRIGHT),
-        GizmoAxis::Z => (colors::AXIS_Z, colors::AXIS_Z_BRIGHT),
+        GizmoAxis::X => (default_style::AXIS_X, default_style::AXIS_X_BRIGHT),
+        GizmoAxis::Y => (default_style::AXIS_Y, default_style::AXIS_Y_BRIGHT),
+        GizmoAxis::Z => (default_style::AXIS_Z, default_style::AXIS_Z_BRIGHT),
     };
 
     if is_active {

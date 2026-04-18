@@ -36,7 +36,7 @@ impl Plugin for JackdawPlugin {
             .init_asset_loader::<JackdawSceneLoader>();
 
         app.add_systems(Update, spawn_loaded_scenes);
-        app.add_systems(Update, jackdaw_jsn::mesh_rebuild::rebuild_brush_meshes);
+        app.add_observer(jackdaw_jsn::mesh_rebuild::rebuild_brush_meshes);
     }
 }
 

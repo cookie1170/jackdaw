@@ -1,10 +1,38 @@
 use bevy::{
+    asset::{embedded_asset, load_embedded_asset},
     camera::{RenderTarget, visibility::RenderLayers},
     prelude::*,
     render::render_resource::TextureFormat,
 };
 
-use crate::colors;
+use crate::default_style;
+
+pub(super) struct MaterialPreviewPlugin;
+
+impl Plugin for MaterialPreviewPlugin {
+    fn build(&self, app: &mut App) {
+        embedded_asset!(
+            app,
+            "../assets/environment_maps/voortrekker_interior_1k_diffuse.ktx2"
+        );
+        embedded_asset!(
+            app,
+            "../assets/environment_maps/voortrekker_interior_1k_specular.ktx2"
+        );
+        app.add_systems(
+            OnEnter(crate::AppState::Editor),
+            setup_material_preview_scene,
+        )
+        .add_systems(
+            Update,
+            (
+                update_preview_camera_transform,
+                update_active_preview_material,
+            )
+                .run_if(in_state(crate::AppState::Editor)),
+        );
+    }
+}
 
 #[derive(Component)]
 pub struct PreviewSphere;
@@ -35,12 +63,13 @@ impl Default for MaterialPreviewState {
 
 const PREVIEW_LAYER: usize = 1;
 
-pub fn setup_material_preview_scene(
+fn setup_material_preview_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut preview_state: ResMut<MaterialPreviewState>,
+    assets: Res<AssetServer>,
 ) {
     let preview_layer = RenderLayers::layer(PREVIEW_LAYER);
 
@@ -64,30 +93,6 @@ pub fn setup_material_preview_scene(
         preview_layer.clone(),
     ));
 
-    commands.spawn((
-        crate::EditorEntity,
-        DirectionalLight {
-            illuminance: 5000.0,
-            ..default()
-        },
-        Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.7, 0.5, 0.0)),
-        Visibility::Inherited,
-        preview_layer.clone(),
-    ));
-
-    // Fill light from opposite direction for balanced preview
-    commands.spawn((
-        crate::EditorEntity,
-        DirectionalLight {
-            illuminance: 2000.0,
-            shadows_enabled: false,
-            ..default()
-        },
-        Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, 0.5, -2.5, 0.0)),
-        Visibility::Inherited,
-        preview_layer.clone(),
-    ));
-
     let preview_image = Image::new_target_texture(
         256,
         256,
@@ -104,7 +109,22 @@ pub fn setup_material_preview_scene(
         Camera {
             order: -1,
             is_active: false,
-            clear_color: ClearColorConfig::Custom(colors::MATERIAL_PREVIEW_BG),
+            clear_color: ClearColorConfig::Custom(default_style::MATERIAL_PREVIEW_BG),
+            ..default()
+        },
+        // It may seem like this bit of code is duplicated in viewport.rs, but that is incidental
+        // Since the user may have any number of material preview and viewport windows open, we cannot have a global resource for the current env map light
+        // Instead, it should be per view. Ideally we should however have a global resource telling us about the *available* env map light textures!
+        EnvironmentMapLight {
+            diffuse_map: load_embedded_asset!(
+                &*assets,
+                "../assets/environment_maps/voortrekker_interior_1k_diffuse.ktx2"
+            ),
+            specular_map: load_embedded_asset!(
+                &*assets,
+                "../assets/environment_maps/voortrekker_interior_1k_specular.ktx2"
+            ),
+            intensity: 2000.0,
             ..default()
         },
         RenderTarget::Image(preview_image_handle.into()),
@@ -113,7 +133,7 @@ pub fn setup_material_preview_scene(
     ));
 }
 
-pub fn update_preview_camera_transform(
+fn update_preview_camera_transform(
     preview_state: Res<MaterialPreviewState>,
     mut camera_q: Query<&mut Transform, With<PreviewCamera>>,
 ) {
@@ -135,7 +155,7 @@ pub fn update_preview_camera_transform(
     }
 }
 
-pub fn update_active_preview_material(
+fn update_active_preview_material(
     preview_state: Res<MaterialPreviewState>,
     mut sphere_q: Query<&mut MeshMaterial3d<StandardMaterial>, With<PreviewSphere>>,
     mut camera_q: Query<&mut Camera, With<PreviewCamera>>,

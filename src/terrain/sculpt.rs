@@ -7,8 +7,8 @@ use bevy::{
 use super::{
     CHUNK_SIZE, TerrainBrushSettings, TerrainDirtyChunks, TerrainEditMode, TerrainSculptState,
 };
-use crate::colors;
 use crate::commands::{CommandHistory, EditorCommand};
+use crate::default_style;
 use crate::selection::Selection;
 use crate::viewport::{MainViewportCamera, SceneViewport};
 
@@ -314,6 +314,6 @@ fn draw_terrain_brush_gizmo(
         let p0 = origin + Vec3::new(gx0 * cell.x - half.x, h0 + 0.1, gz0 * cell.y - half.y);
         let p1 = origin + Vec3::new(gx1 * cell.x - half.x, h1 + 0.1, gz1 * cell.y - half.y);
 
-        gizmos.line(p0, p1, colors::TERRAIN_SCULPT_GIZMO);
+        gizmos.line(p0, p1, default_style::TERRAIN_SCULPT_GIZMO);
     }
 }

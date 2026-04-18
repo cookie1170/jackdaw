@@ -22,7 +22,7 @@ use jackdaw_feathers::{
     tokens,
 };
 
-use crate::colors;
+use crate::default_style;
 
 use super::{FieldBinding, InspectorFieldRow, MAX_REFLECT_DEPTH};
 
@@ -932,7 +932,7 @@ fn spawn_vec3_row(
         axes_row,
         "X",
         vec3.x as f64,
-        colors::INSPECTOR_AXIS_X,
+        default_style::INSPECTOR_AXIS_X,
         format!("{field_path}.x"),
         source_entity,
         type_path,
@@ -943,7 +943,7 @@ fn spawn_vec3_row(
         axes_row,
         "Y",
         vec3.y as f64,
-        colors::INSPECTOR_AXIS_Y,
+        default_style::INSPECTOR_AXIS_Y,
         format!("{field_path}.y"),
         source_entity,
         type_path,
@@ -954,7 +954,7 @@ fn spawn_vec3_row(
         axes_row,
         "Z",
         vec3.z as f64,
-        colors::INSPECTOR_AXIS_Z,
+        default_style::INSPECTOR_AXIS_Z,
         format!("{field_path}.z"),
         source_entity,
         type_path,
@@ -1016,7 +1016,7 @@ fn spawn_vec2_row(
         axes_row,
         "X",
         vec2.x as f64,
-        colors::INSPECTOR_AXIS_X,
+        default_style::INSPECTOR_AXIS_X,
         format!("{field_path}.x"),
         source_entity,
         type_path,
@@ -1027,7 +1027,7 @@ fn spawn_vec2_row(
         axes_row,
         "Y",
         vec2.y as f64,
-        colors::INSPECTOR_AXIS_Y,
+        default_style::INSPECTOR_AXIS_Y,
         format!("{field_path}.y"),
         source_entity,
         type_path,
@@ -1098,7 +1098,7 @@ fn spawn_vec4_row(
         axes_row,
         "X",
         x,
-        colors::INSPECTOR_AXIS_X,
+        default_style::INSPECTOR_AXIS_X,
         format!("{field_path}.x"),
         source_entity,
         type_path,
@@ -1109,7 +1109,7 @@ fn spawn_vec4_row(
         axes_row,
         "Y",
         y,
-        colors::INSPECTOR_AXIS_Y,
+        default_style::INSPECTOR_AXIS_Y,
         format!("{field_path}.y"),
         source_entity,
         type_path,
@@ -1120,7 +1120,7 @@ fn spawn_vec4_row(
         axes_row,
         "Z",
         z,
-        colors::INSPECTOR_AXIS_Z,
+        default_style::INSPECTOR_AXIS_Z,
         format!("{field_path}.z"),
         source_entity,
         type_path,

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::brush::BrushMeshCache;
-use crate::colors;
+use crate::default_style;
 use crate::gizmos::{GizmoDragState, GizmoMode};
 use crate::modal_transform::{ModalOp, ModalTransformState, ViewportDragState};
 use crate::selection::Selected;
@@ -344,7 +344,7 @@ fn draw_alignment_guides(
             start[best_perp] = d_center[best_perp] - line_half_extent;
             end[best_perp] = d_center[best_perp] + line_half_extent;
 
-            gizmos.line(start, end, colors::ALIGNMENT_GUIDE);
+            gizmos.line(start, end, default_style::ALIGNMENT_GUIDE);
 
             // Snap
             if candidate.abs_delta < snap_threshold {

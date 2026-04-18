@@ -6,7 +6,7 @@ impl Plugin for ViewModesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ViewModeSettings>().add_systems(
             Update,
-            toggle_wireframe_key.in_set(crate::EditorInteraction),
+            toggle_wireframe_key.in_set(crate::EditorInteractionSystems),
         );
     }
 }

@@ -5,7 +5,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::colors;
+use crate::default_style;
 use bevy_rerecast::{
     TriMeshFromBevyMesh as _,
     prelude::*,
@@ -188,7 +188,7 @@ fn rebuild_navmesh_visuals(
     }
 
     // --- Build retained-mode gizmo wireframe (detail triangles) ---
-    let wireframe_color: Color = colors::NAVMESH_DETAIL_WIREFRAME;
+    let wireframe_color: Color = default_style::NAVMESH_DETAIL_WIREFRAME;
 
     if let Ok((_entity, gizmo)) = existing_gizmo.single() {
         if let Some(asset) = gizmo_assets.get_mut(&gizmo.handle) {
@@ -238,7 +238,7 @@ fn rebuild_navmesh_visuals(
         mesh.insert_indices(Indices::U32(indices));
 
         let material = materials.add(StandardMaterial {
-            base_color: colors::NAVMESH_POLYGON_FILL,
+            base_color: default_style::NAVMESH_POLYGON_FILL,
             unlit: true,
             alpha_mode: AlphaMode::Blend,
             cull_mode: None,
@@ -259,7 +259,7 @@ fn rebuild_navmesh_visuals(
     }
 
     // --- Build polygon mesh wireframe (coarser outlines) ---
-    let poly_color: Color = colors::NAVMESH_POLYGON_WIREFRAME;
+    let poly_color: Color = default_style::NAVMESH_POLYGON_WIREFRAME;
 
     if let Ok((_entity, gizmo)) = existing_poly_gizmo.single() {
         if let Some(asset) = gizmo_assets.get_mut(&gizmo.handle) {
@@ -489,7 +489,7 @@ fn sync_navmesh_viz_visibility(
             asset.clear();
             if viz_config.show_detail_mesh {
                 if let Some(navmesh) = navmesh_handle.as_ref().and_then(|h| navmeshes.get(h.id())) {
-                    let color: Color = colors::NAVMESH_DETAIL_WIREFRAME;
+                    let color: Color = default_style::NAVMESH_DETAIL_WIREFRAME;
                     populate_wireframe(asset, &navmesh.detail, color);
                 }
             }
@@ -502,7 +502,7 @@ fn sync_navmesh_viz_visibility(
             asset.clear();
             if viz_config.show_polygon_mesh {
                 if let Some(navmesh) = navmesh_handle.as_ref().and_then(|h| navmeshes.get(h.id())) {
-                    let color: Color = colors::NAVMESH_POLYGON_WIREFRAME;
+                    let color: Color = default_style::NAVMESH_POLYGON_WIREFRAME;
                     populate_polygon_wireframe(asset, &navmesh.polygon, color);
                 }
             }
@@ -511,7 +511,7 @@ fn sync_navmesh_viz_visibility(
 }
 
 fn populate_obstacle_wireframe(gizmo: &mut GizmoAsset, trimesh: &TriMesh) {
-    let color: Color = colors::NAVMESH_OBSTACLE_WIREFRAME;
+    let color: Color = default_style::NAVMESH_OBSTACLE_WIREFRAME;
     for indices in &trimesh.indices {
         let verts: Vec<Vec3> = indices
             .to_array()
@@ -524,10 +524,10 @@ fn populate_obstacle_wireframe(gizmo: &mut GizmoAsset, trimesh: &TriMesh) {
 
 fn area_color(area: u8) -> Color {
     match area {
-        0 => colors::NAVMESH_AREA_0,
-        1 => colors::NAVMESH_AREA_1,
-        2 => colors::NAVMESH_AREA_2,
-        3 => colors::NAVMESH_AREA_3,
-        _ => colors::NAVMESH_AREA_DEFAULT,
+        0 => default_style::NAVMESH_AREA_0,
+        1 => default_style::NAVMESH_AREA_1,
+        2 => default_style::NAVMESH_AREA_2,
+        3 => default_style::NAVMESH_AREA_3,
+        _ => default_style::NAVMESH_AREA_DEFAULT,
     }
 }

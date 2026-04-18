@@ -91,12 +91,10 @@ pub struct BrushFaceHover {
 pub struct BrushMaterialPalette {
     pub materials: Vec<Handle<StandardMaterial>>,
     pub preview_materials: Vec<Handle<StandardMaterial>>,
-    /// Grid-textured default material at 50% alpha (unselected).
+    /// Grid-textured default material at low alpha.
     pub default_material: Handle<StandardMaterial>,
-    /// Grid-textured default material at 90% alpha (selected).
+    /// Grid-textured default material at high alpha.
     pub default_selected_material: Handle<StandardMaterial>,
-    /// Grid-textured default material at 75% alpha (drag preview).
-    pub default_preview_material: Handle<StandardMaterial>,
 }
 
 /// Remembers the last material applied via the texture/material browser, so new brushes inherit it.
@@ -165,6 +163,7 @@ impl Plugin for BrushPlugin {
             .init_resource::<EdgeDragState>()
             .init_resource::<ClipState>()
             .init_resource::<LastUsedMaterial>()
+            .add_plugins(mesh::MeshPlugin)
             .add_systems(
                 OnEnter(crate::AppState::Editor),
                 mesh::setup_default_materials,
@@ -181,7 +180,7 @@ impl Plugin for BrushPlugin {
                     interaction::handle_clip_mode,
                 )
                     .chain()
-                    .in_set(crate::EditorInteraction),
+                    .in_set(crate::EditorInteractionSystems),
             )
             .add_systems(
                 Update,
@@ -194,7 +193,7 @@ impl Plugin for BrushPlugin {
                     gizmo_overlay::draw_brush_edit_gizmos,
                 )
                     .chain()
-                    .after(crate::EditorInteraction)
+                    .after(crate::EditorInteractionSystems)
                     .run_if(in_state(crate::AppState::Editor)),
             );
     }

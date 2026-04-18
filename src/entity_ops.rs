@@ -50,7 +50,10 @@ impl Plugin for EntityOpsPlugin {
         app.register_type::<EmptyEntity>()
             .register_type::<SceneCamera>()
             .register_type::<SceneLight>()
-            .add_systems(Update, handle_entity_keys.in_set(crate::EditorInteraction));
+            .add_systems(
+                Update,
+                handle_entity_keys.in_set(crate::EditorInteractionSystems),
+            );
     }
 }
 

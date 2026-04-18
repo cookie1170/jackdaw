@@ -1,4 +1,4 @@
-use crate::colors;
+use crate::default_style;
 use crate::{
     EditorEntity,
     gizmos::handle_gizmo_hover,
@@ -32,7 +32,7 @@ impl Plugin for ViewportSelectPlugin {
                     update_box_select_overlay,
                     exit_group_on_escape,
                 )
-                    .in_set(crate::EditorInteraction),
+                    .in_set(crate::EditorInteractionSystems),
             );
     }
 }
@@ -345,8 +345,8 @@ fn update_box_select_overlay(
                 border: UiRect::all(Val::Px(1.0)),
                 ..default()
             },
-            BackgroundColor(colors::SELECTION_MARQUEE_BG),
-            BorderColor::all(colors::SELECTION_MARQUEE_BORDER),
+            BackgroundColor(default_style::SELECTION_MARQUEE_BG),
+            BorderColor::all(default_style::SELECTION_MARQUEE_BORDER),
             GlobalZIndex(50),
             Pickable::IGNORE,
         );

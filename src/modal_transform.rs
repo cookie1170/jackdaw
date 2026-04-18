@@ -6,7 +6,7 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions},
 };
 
-use crate::colors;
+use crate::default_style;
 use crate::{
     commands::{CommandHistory, SetTransform},
     gizmos::{GizmoAxis, GizmoDragState, GizmoHoverState, GizmoMode},
@@ -85,7 +85,7 @@ impl Plugin for ModalTransformPlugin {
                     viewport_drag_finish,
                 )
                     .chain()
-                    .in_set(crate::EditorInteraction),
+                    .in_set(crate::EditorInteractionSystems),
             );
     }
 }
@@ -775,8 +775,8 @@ fn axis_to_vec3(axis: GizmoAxis) -> Vec3 {
 #[allow(dead_code)]
 fn axis_color(axis: GizmoAxis) -> Color {
     match axis {
-        GizmoAxis::X => colors::AXIS_X,
-        GizmoAxis::Y => colors::AXIS_Y,
-        GizmoAxis::Z => colors::AXIS_Z,
+        GizmoAxis::X => default_style::AXIS_X,
+        GizmoAxis::Y => default_style::AXIS_Y,
+        GizmoAxis::Z => default_style::AXIS_Z,
     }
 }

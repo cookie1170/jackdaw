@@ -993,8 +993,8 @@ impl Default for KeybindRegistry {
         bindings.insert(A::CameraBackward, k(K::KeyS));
         bindings.insert(A::CameraLeft, k(K::KeyA));
         bindings.insert(A::CameraRight, k(K::KeyD));
-        bindings.insert(A::CameraUp, k(K::KeyQ));
-        bindings.insert(A::CameraDown, k(K::KeyE));
+        bindings.insert(A::CameraDown, k(K::KeyQ));
+        bindings.insert(A::CameraUp, k(K::KeyE));
 
         // ── Camera bookmarks (Ctrl+N to save, N to load) ─────────────
         bindings.insert(A::SaveBookmark1, b(K::Digit1, true, false, false));

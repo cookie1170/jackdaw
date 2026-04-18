@@ -16,6 +16,7 @@ use jackdaw_feathers::{
 };
 use rfd::AsyncFileDialog;
 
+use crate::brush::LastUsedMaterial;
 use crate::{
     EditorEntity,
     asset_browser::attach_tooltip,
@@ -39,7 +40,6 @@ impl Plugin for MaterialBrowserPlugin {
                     |world: &mut World| crate::asset_catalog::load_catalog(world),
                     scan_material_definitions,
                     |world: &mut World| crate::asset_catalog::save_catalog(world),
-                    crate::material_preview::setup_material_preview_scene,
                 )
                     .chain(),
             )
@@ -53,8 +53,6 @@ impl Plugin for MaterialBrowserPlugin {
                     update_preview_area,
                     poll_material_browser_folder,
                     poll_texture_slot_pick,
-                    crate::material_preview::update_preview_camera_transform,
-                    crate::material_preview::update_active_preview_material,
                 )
                     .run_if(in_state(crate::AppState::Editor)),
             )
@@ -641,8 +639,11 @@ fn handle_apply_material(
     mut history: ResMut<CommandHistory>,
     brush_groups: Query<(), With<jackdaw_jsn::types::BrushGroup>>,
     children_query: Query<&Children>,
+    mut last_material: ResMut<LastUsedMaterial>,
     mut commands: Commands,
 ) {
+    last_material.material = Some(event.material.clone());
+
     if *edit_mode == EditMode::BrushEdit(BrushEditMode::Face) && !brush_selection.faces.is_empty() {
         if let Some(entity) = brush_selection.entity {
             if let Ok(mut brush) = brushes.get_mut(entity) {
@@ -742,6 +743,7 @@ fn update_preview_area(
     dragging_query: Query<(), With<TextEditDragging>>,
     all_children_query: Query<&Children>,
     icon_font: Res<icons::IconFont>,
+    mut last_material: ResMut<LastUsedMaterial>,
 ) {
     let icon_font = icon_font.0.clone();
     if !preview_state.is_changed() {
@@ -818,6 +820,10 @@ fn update_preview_area(
 
     // Apply button
     let handle_for_apply = active_handle.clone();
+    // set the last used material to the active handle, but don't change the material of the current selection
+    // this makes it really nice to draw new brushes after clicking on something without accidentally changing the current selection's material
+    last_material.material = Some(handle_for_apply.clone());
+
     let apply_btn = commands
         .spawn((
             Node {

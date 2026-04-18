@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use bevy::{ecs::system::SystemParam, input_focus::InputFocus, prelude::*};
 
-use crate::colors;
+use crate::default_style;
 use crate::{
     commands::CommandHistory,
     draw_brush::{CreateBrushCommand, brush_data_from_entity},
@@ -1863,7 +1863,7 @@ pub(super) fn handle_clip_mode(
     // Draw clip points and preview
     for (i, point) in clip_state.points.iter().enumerate() {
         let world_pos = brush_global.transform_point(*point);
-        let color = colors::CLIP_POINT;
+        let color = default_style::CLIP_POINT;
         gizmos.sphere(Isometry3d::from_translation(world_pos), 0.06, color);
         // Draw connecting lines between points
         if i > 0 {
@@ -1878,8 +1878,6 @@ pub(super) fn handle_clip_mode(
             return;
         };
         let (_, brush_rot, brush_trans) = brush_global.to_scale_rotation_translation();
-        let world_normal = brush_rot * plane.normal;
-        let center = brush_global.transform_point(plane.normal * plane.distance);
 
         let world_faces = brush_planes_to_world(&brush_ref.faces, brush_rot, brush_trans);
 
@@ -1912,9 +1910,9 @@ pub(super) fn handle_clip_mode(
         back_faces.push(back_clip);
 
         let (front_color, back_color) = match clip_state.mode {
-            ClipMode::KeepFront => (colors::CLIP_KEEP, colors::CLIP_DISCARD),
-            ClipMode::KeepBack => (colors::CLIP_DISCARD, colors::CLIP_KEEP),
-            ClipMode::Split => (colors::CLIP_KEEP, colors::CLIP_SPLIT_BACK),
+            ClipMode::KeepFront => (default_style::CLIP_KEEP, default_style::CLIP_DISCARD),
+            ClipMode::KeepBack => (default_style::CLIP_DISCARD, default_style::CLIP_KEEP),
+            ClipMode::Split => (default_style::CLIP_KEEP, default_style::CLIP_SPLIT_BACK),
         };
 
         // Draw front half wireframe
@@ -1940,13 +1938,6 @@ pub(super) fn handle_clip_mode(
                 }
             }
         }
-
-        // Draw normal arrow (direction reflects mode)
-        let arrow_dir = match clip_state.mode {
-            ClipMode::KeepBack => -world_normal,
-            _ => world_normal,
-        };
-        gizmos.arrow(center, center + arrow_dir * 0.5, colors::CLIP_NORMAL_ARROW);
     }
 }
 

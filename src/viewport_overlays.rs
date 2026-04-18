@@ -1,9 +1,10 @@
 use std::f32::consts::FRAC_PI_2;
 
 use crate::brush::{self, BrushMeshCache};
-use crate::colors;
+use crate::entity_ops::EmptyEntity;
 use crate::selection::Selected;
 use crate::viewport::SceneViewport;
+use crate::{JackdawDrawSystems, default_style};
 use avian3d::parry::math::Point as ParryPoint;
 use avian3d::parry::transformation::convex_hull;
 use bevy::prelude::*;
@@ -26,10 +27,7 @@ impl Plugin for ViewportOverlaysPlugin {
             )
             .add_systems(
                 PostUpdate,
-                draw_selection_bounding_boxes
-                    .after(bevy::camera::visibility::VisibilitySystems::CalculateBounds)
-                    .after(bevy::transform::TransformSystems::Propagate)
-                    .run_if(in_state(crate::AppState::Editor)),
+                draw_selection_bounding_boxes.in_set(JackdawDrawSystems),
             )
             .add_systems(
                 PostUpdate,
@@ -45,9 +43,7 @@ impl Plugin for ViewportOverlaysPlugin {
             )
             .add_systems(
                 PostUpdate,
-                (draw_coordinate_indicator, draw_navmesh_region_bounds)
-                    .after(bevy::transform::TransformSystems::Propagate)
-                    .run_if(in_state(crate::AppState::Editor)),
+                (draw_coordinate_indicator, draw_navmesh_region_bounds).in_set(JackdawDrawSystems),
             );
     }
 }
@@ -67,18 +63,23 @@ pub struct OverlaySettings {
     pub show_coordinate_indicator: bool,
     pub bounding_box_mode: BoundingBoxMode,
     pub show_face_grid: bool,
+    /// Whether all visible brushes should show a wireframe outline.
     pub show_brush_wireframe: bool,
+    /// Whether all visible brushes should show an outline.
+    /// Note that regardless of this setting, the current selection will always show an outline.
+    pub show_brush_outline: bool,
     pub show_alignment_guides: bool,
 }
 
 impl Default for OverlaySettings {
     fn default() -> Self {
         Self {
-            show_bounding_boxes: true,
+            show_bounding_boxes: false,
             show_coordinate_indicator: true,
             bounding_box_mode: BoundingBoxMode::default(),
-            show_face_grid: true,
-            show_brush_wireframe: true,
+            show_face_grid: false,
+            show_brush_wireframe: false,
+            show_brush_outline: true,
             show_alignment_guides: true,
         }
     }
@@ -107,7 +108,7 @@ fn draw_selection_bounding_boxes(
         return;
     }
 
-    let color = colors::SELECTION_BBOX;
+    let color = default_style::SELECTION_BBOX;
 
     for (entity, global_tf, maybe_brush_cache, inherited_vis) in &selected {
         if !inherited_vis.get() {
@@ -279,9 +280,9 @@ pub(crate) fn collect_descendant_mesh_world_vertices(
 /// Bright bounding-box color when selected, dim marker color otherwise.
 fn marker_color(is_selected: bool) -> Color {
     if is_selected {
-        colors::SELECTION_BBOX
+        default_style::SELECTION_BBOX
     } else {
-        colors::ENTITY_MARKER_UNSELECTED
+        default_style::ENTITY_MARKER_UNSELECTED
     }
 }
 
@@ -452,10 +453,7 @@ fn draw_camera_gizmo(
 fn draw_empty_entity_marker(
     mut gizmos: Gizmos,
     settings: Res<OverlaySettings>,
-    query: Query<
-        (&GlobalTransform, &InheritedVisibility, Has<Selected>),
-        With<crate::entity_ops::EmptyEntity>,
-    >,
+    query: Query<(&GlobalTransform, &InheritedVisibility, Has<Selected>), With<EmptyEntity>>,
 ) {
     if !settings.show_bounding_boxes {
         return;
@@ -480,9 +478,9 @@ fn draw_empty_entity_marker(
 
 fn spawn_axis_labels(mut commands: Commands, viewport_entity: Single<Entity, With<SceneViewport>>) {
     let labels = [
-        ("X", colors::AXIS_X_BRIGHT),
-        ("Y", colors::AXIS_Y_BRIGHT),
-        ("Z", colors::AXIS_Z_BRIGHT),
+        ("X", default_style::AXIS_X_BRIGHT),
+        ("Y", default_style::AXIS_Y_BRIGHT),
+        ("Z", default_style::AXIS_Z_BRIGHT),
     ];
     let mut entities = [Entity::PLACEHOLDER; 3];
     for (i, (letter, color)) in labels.iter().enumerate() {
@@ -553,7 +551,11 @@ fn draw_coordinate_indicator(
     let size = half_height * 0.07;
 
     let axes = [Vec3::X, Vec3::Y, Vec3::Z];
-    let axis_colors = [colors::AXIS_X, colors::AXIS_Y, colors::AXIS_Z];
+    let axis_colors = [
+        default_style::AXIS_X,
+        default_style::AXIS_Y,
+        default_style::AXIS_Z,
+    ];
 
     for (axis, color) in axes.iter().zip(axis_colors.iter()) {
         gizmos.line(indicator_pos, indicator_pos + *axis * size, *color);
@@ -588,7 +590,7 @@ fn draw_navmesh_region_bounds(
     mut gizmos: Gizmos,
     regions: Query<&GlobalTransform, With<jackdaw_jsn::NavmeshRegion>>,
 ) {
-    let color = colors::NAVMESH_REGION_BOUNDS;
+    let color = default_style::NAVMESH_REGION_BOUNDS;
     for global_tf in &regions {
         let transform = global_tf.compute_transform();
         gizmos.cube(transform, color);
