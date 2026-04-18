@@ -103,8 +103,8 @@ pub const TERRAIN_SCULPT_GIZMO: Color = Color::srgb(1.0, 0.8, 0.2);
 pub const MATERIAL_PREVIEW_BG: Color = Color::srgba(0.15, 0.15, 0.15, 1.0);
 
 // ── Brush default material variants ──
-pub const DEFAULT_MATERIAL_COLOR: Color = Color::srgba(1.0, 0.8235, 0.0078, 0.5);
-pub const DEFAULT_MATERIAL_SELECTED_COLOR: Color = Color::srgba(1.0, 0.8235, 0.0078, 0.75);
+pub const DEFAULT_MATERIAL_COLOR: Color = Color::srgba(0.980, 0.8549, 0.3686, 0.5);
+pub const DEFAULT_MATERIAL_SELECTED_COLOR: Color = Color::srgba(0.980, 0.8549, 0.3686, 0.75);
 
 // ── Brush material palette ──
 pub const BRUSH_PALETTE: [Color; 8] = [
