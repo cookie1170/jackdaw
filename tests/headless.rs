@@ -90,7 +90,10 @@ fn can_pass_params_to_operator() {
 
     let result = app
         .world_mut()
-        .call_operator(SampleExtension::CHECK_PARAMS, props!["foo" => "bar"])
+        .call_operator(
+            SampleExtension::CHECK_PARAMS,
+            props!["foo" => "bar", "baz" => 42],
+        )
         .unwrap();
     assert_eq!(result, OperatorResult::Finished);
 }
@@ -139,7 +142,8 @@ fn spawn_marker(_: In<CustomProperties>, mut commands: Commands) -> OperatorResu
     id = SampleExtension::CHECK_PARAMS,
 )]
 fn check_params(params: In<CustomProperties>) -> OperatorResult {
-    assert_eq!(params["foo"], PropertyValue::String("bar".to_string()));
+    assert_eq!(params["foo"], "bar".into());
+    assert_eq!(params["baz"], 42.into());
     OperatorResult::Finished
 }
 
