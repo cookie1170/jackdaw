@@ -243,7 +243,7 @@ impl<'a> ExtensionContext<'a> {
         ec
     }
 
-    /// Register an operator. Spawns an [`OperatorEntity`](lifecycle::OperatorEntity) as a child
+    /// Register an operator. Spawns an [`OperatorEntity`] as a child
     /// of the extension entity and, unless [`Operator::MANUAL`] is
     /// `true`, a `Fire<O>` observer that dispatches the operator
     /// through [`crate::OperatorWorldExt::operator`]. BEI binding
