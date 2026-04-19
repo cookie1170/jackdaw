@@ -80,7 +80,6 @@ use crate::{
 pub mod prelude {
     pub use crate::{
         ExtensionContext, JackdawExtension, MenuEntryDescriptor, WindowDescriptor,
-        jsn::CustomProperties,
         lifecycle::{
             Extension, ExtensionAppExt as _, ExtensionCatalog, ExtensionKind, RegisteredMenuEntry,
             RegisteredWindow,
