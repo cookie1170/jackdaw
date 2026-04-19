@@ -47,11 +47,10 @@ fn can_run_extension() {
     // todo: maybe do plugin setup in `Startup` so that jackdaw is actually ready in the first frame?
     app.update();
     for _ in 0..10 {
-        let result = app
-            .world_mut()
+        app.world_mut()
             .call_operator(SampleExtension::SPAWN, CustomProperties::default())
-            .unwrap();
-        assert_eq!(result, OperatorResult::Finished);
+            .unwrap()
+            .assert_finished_i_agree_to_only_use_this_in_integration_tests_and_not_production();
         app.update();
     }
 }
@@ -72,11 +71,10 @@ fn can_call_operator() {
     assert_eq!(amount_of_panels, 0);
     assert!(!app.world_mut().contains_resource::<Marker>());
 
-    let result = app
-        .world_mut()
+    app.world_mut()
         .call_operator(SampleExtension::SPAWN, CustomProperties::default())
-        .unwrap();
-    assert_eq!(result, OperatorResult::Finished);
+        .unwrap()
+        .assert_finished_i_agree_to_only_use_this_in_integration_tests_and_not_production();
 
     assert!(app.world_mut().contains_resource::<Marker>());
 }
@@ -87,15 +85,13 @@ fn can_pass_params_to_operator() {
     app.register_extension::<SampleExtension>();
     app.finish();
     app.update();
-
-    let result = app
-        .world_mut()
+    app.world_mut()
         .call_operator(
             SampleExtension::CHECK_PARAMS,
             props!["foo" => "bar", "baz" => 42],
         )
-        .unwrap();
-    assert_eq!(result, OperatorResult::Finished);
+        .unwrap()
+        .assert_finished_i_agree_to_only_use_this_in_integration_tests_and_not_production();
 }
 
 #[derive(Default)]
