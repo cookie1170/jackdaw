@@ -11,8 +11,20 @@ categories = ["game-development", "graphics"]
 exclude = ["assets/environment_maps/"]
 
 [features]
-default = []
+default = ["dev"]
 hot-reload = ["dep:bevy_simple_subsecond_system"]
+# Registers the in-tree example extensions (`sample`, `viewable_camera`)
+# with the prebuilt binary. On by default while the API is still being
+# shaken out; release distributions should be built with
+# `--no-default-features` to ship without them.
+dev = ["dep:sample_extension", "dep:viewable_camera_extension"]
+# Enable on the editor binary to load extension dylibs safely.
+# Pulls in Bevy's `dynamic_linking` plus Jackdaw's own
+# `bevy_dylib`-style facade so the editor and every loaded
+# extension share one compiled copy of every type that crosses the
+# boundary. Disabled by default: it forces Bevy and jackdaw_api to
+# rebuild as dylibs, which slows the incremental dev loop.
+dylib = ["jackdaw_api/dynamic_linking"]
 
 [workspace]
 members = [
@@ -38,9 +50,11 @@ jackdaw_animation.workspace = true
 jackdaw_avian_integration.workspace = true
 jackdaw_panels.workspace = true
 jackdaw_api.workspace = true
+jackdaw_loader.workspace = true
+jackdaw_sdk.workspace = true
 bevy_enhanced_input.workspace = true
-sample_extension = { path = "examples/sample_extension" }
-viewable_camera_extension = { path = "examples/viewable_camera_extension" }
+sample_extension = { path = "examples/sample_extension", optional = true }
+viewable_camera_extension = { path = "examples/viewable_camera_extension", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 avian3d.workspace = true
@@ -83,7 +97,11 @@ jackdaw_avian_integration = { version = "0.4.0", path = "crates/jackdaw_avian_in
 jackdaw_runtime = { version = "0.4.0", path = "crates/jackdaw_runtime" }
 jackdaw_panels = { version = "0.4.0", path = "crates/jackdaw_panels" }
 jackdaw_api = { version = "0.4.0", path = "crates/jackdaw_api" }
+jackdaw_api_internal = { version = "0.4.0", path = "crates/jackdaw_api_internal" }
 jackdaw_api_macros = { version = "0.4.0", path = "crates/jackdaw_api_macros" }
+jackdaw_dylib = { version = "0.4.0", path = "crates/jackdaw_dylib" }
+jackdaw_loader = { version = "0.4.0", path = "crates/jackdaw_loader" }
+jackdaw_sdk = { version = "0.4.0", path = "crates/jackdaw_sdk" }
 bevy_enhanced_input = "0.24"
 rfd = "0.15"
 bevy_rerecast = { version = "0.4", default-features = true }

@@ -501,6 +501,7 @@ version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd310426290cec560221f9750c2f4484be4a8eeea7de3483c423329b465c40e"
 dependencies = [
+ "bevy_dylib",
  "bevy_internal 0.18.1",
 ]
 
@@ -868,6 +869,15 @@ dependencies = [
  "log",
  "serde",
  "sysinfo",
+]
+
+[[package]]
+name = "bevy_dylib"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f142f72bbbc1a61338bf6da5dc7cf6dcf223683b9d53bcd635ebff4bfeb5308f"
+dependencies = [
+ "bevy_internal 0.18.1",
 ]
 
 [[package]]
@@ -4470,10 +4480,12 @@ dependencies = [
  "jackdaw_feathers",
  "jackdaw_geometry",
  "jackdaw_jsn",
+ "jackdaw_loader",
  "jackdaw_node_graph",
  "jackdaw_panels",
  "jackdaw_remote",
  "jackdaw_runtime",
+ "jackdaw_sdk",
  "jackdaw_terrain",
  "jackdaw_widgets",
  "notify",
@@ -4500,6 +4512,15 @@ dependencies = [
 
 [[package]]
 name = "jackdaw_api"
+version = "0.4.0"
+dependencies = [
+ "bevy",
+ "jackdaw_api_internal",
+ "jackdaw_dylib",
+]
+
+[[package]]
+name = "jackdaw_api_internal"
 version = "0.4.0"
 dependencies = [
  "bevy",
@@ -4543,6 +4564,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackdaw_dylib"
+version = "0.4.0"
+dependencies = [
+ "jackdaw_api_internal",
+ "jackdaw_commands",
+ "jackdaw_panels",
+]
+
+[[package]]
 name = "jackdaw_feathers"
 version = "0.4.0"
 dependencies = [
@@ -4570,6 +4600,16 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "jackdaw_loader"
+version = "0.4.0"
+dependencies = [
+ "bevy",
+ "dirs",
+ "jackdaw_api",
+ "libloading",
 ]
 
 [[package]]
@@ -4615,6 +4655,18 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "jackdaw_rustc_wrapper"
+version = "0.4.0"
+
+[[package]]
+name = "jackdaw_sdk"
+version = "0.4.0"
+dependencies = [
+ "bevy",
+ "jackdaw_api",
 ]
 
 [[package]]

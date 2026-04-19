@@ -55,8 +55,11 @@
 //! }
 //! ```
 
+mod export;
+pub mod ffi;
 pub mod lifecycle;
 mod operator;
+pub mod pie;
 mod registries;
 pub mod snapshot;
 
@@ -76,6 +79,7 @@ pub use lifecycle::{
     disable_extension, enable_extension, register_extension, tick_modal_operator, unload_extension,
 };
 pub use operator::{Operator, OperatorResult};
+pub use pie::PlayState;
 pub use registries::PanelExtensionRegistry;
 pub use snapshot::{ActiveSnapshotter, SceneSnapshot, SceneSnapshotter};
 
@@ -86,6 +90,7 @@ pub mod prelude {
         OperatorEntity, OperatorIndex, OperatorWorldExt,
     };
     pub use crate::operator::{Operator, OperatorResult};
+    pub use crate::pie::PlayState;
     pub use crate::{
         ExtensionContext, ExtensionPoint, JackdawExtension, MenuEntryDescriptor, PanelContext,
         SectionBuildFn, WindowDescriptor, operator,

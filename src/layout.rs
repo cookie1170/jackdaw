@@ -332,8 +332,10 @@ fn window_header() -> impl Bundle {
     )
 }
 
-/// Play/Pause transport pill. Visual placeholder: the editor has no
-/// play mode yet, so these buttons are no-ops.
+/// Play / Pause / Stop transport pill. Clicking a button triggers
+/// the corresponding `PiePlugin` handler. The plugin installs a
+/// click observer on each `PieButton` via an `On<Add, PieButton>`
+/// observer, so wiring here is purely presentation.
 fn play_pause_controls() -> impl Bundle {
     (
         EditorEntity,
@@ -351,23 +353,34 @@ fn play_pause_controls() -> impl Bundle {
         BackgroundColor(tokens::HEADER_CONTROL_BG),
         BorderColor::all(tokens::HEADER_CONTROL_BORDER),
         children![
-            (
-                Text::new(String::from(Icon::Play.unicode())),
-                TextFont {
-                    font_size: 13.0,
-                    ..Default::default()
-                },
-                TextColor(tokens::HEADER_CONTROL_LABEL),
-            ),
-            (
-                Text::new(String::from(Icon::Pause.unicode())),
-                TextFont {
-                    font_size: 13.0,
-                    ..Default::default()
-                },
-                TextColor(tokens::HEADER_CONTROL_LABEL),
-            ),
+            pie_transport_button(crate::pie::PieButton::Play, Icon::Play),
+            pie_transport_button(crate::pie::PieButton::Pause, Icon::Pause),
+            pie_transport_button(crate::pie::PieButton::Stop, Icon::Square),
         ],
+    )
+}
+
+/// Single clickable glyph. The `PieButton` marker is the hook the
+/// `PiePlugin` uses to attach the click observer.
+fn pie_transport_button(kind: crate::pie::PieButton, icon: Icon) -> impl Bundle {
+    (
+        kind,
+        EditorEntity,
+        Node {
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            padding: UiRect::horizontal(px(2.0)),
+            ..Default::default()
+        },
+        children![(
+            Text::new(String::from(icon.unicode())),
+            TextFont {
+                font_size: 13.0,
+                ..Default::default()
+            },
+            TextColor(tokens::HEADER_CONTROL_LABEL),
+            Pickable::IGNORE,
+        )],
     )
 }
 

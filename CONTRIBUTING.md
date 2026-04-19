@@ -28,6 +28,12 @@ cargo build
 # Run the basic example
 cargo run --example basic
 
+# Working on extension loading? Build with the dylib feature so the
+# dylib loader is exercised end-to-end (editor binary links against
+# the shared libbevy_dylib + libjackdaw_dylib). First build is slow
+# because Bevy and the workspace's shared types recompile as
+# dylibs; subsequent incremental builds are fast.
+cargo run --features dylib
 ```
 
 ## Checks

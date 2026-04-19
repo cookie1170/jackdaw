@@ -1,0 +1,16 @@
+[package]
+name = "jackdaw_loader"
+version = "0.4.0"
+edition = "2024"
+description = "Dynamic-library extension loader for Jackdaw"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jbuehler23/jackdaw"
+
+[dependencies]
+bevy.workspace = true
+jackdaw_api.workspace = true
+libloading = "0.8"
+dirs.workspace = true
+
+[lints]
+workspace = true

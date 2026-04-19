@@ -3,7 +3,7 @@ use jackdaw::EditorPlugin;
 
 fn main() -> AppExit {
     App::new()
-        .add_plugins((DefaultPlugins, EditorPlugin))
+        .add_plugins((DefaultPlugins, EditorPlugin::new().build()))
         .add_systems(Startup, spawn_scene)
         .run()
 }
