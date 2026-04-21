@@ -1,42 +1,30 @@
-//! Source-change → rebuild → install → in-process swap loop.
+//! Build-artifact watcher: when cargo writes a fresh
+//! `target/debug/lib<name>.so` for the active project, install it
+//! and hot-swap the running dylib.
 //!
-//! Watches `<ProjectRoot>/src/**/*.rs` and `Cargo.toml` inside the
-//! active editor project. On save (800 ms debounce), runs
-//! [`ext_build::build_extension_project_with_progress`] in an
-//! [`AsyncComputeTaskPool`] task, then delegates to the install
-//! pipeline. The loader's `load_from_path` now detects that the
-//! game name is already loaded, calls its previous `teardown`
-//! (removing all systems in the game's `SystemSet`, despawning its
-//! observers, removing its resources), drops the old dylib
-//! handle, and invokes the fresh `build` from the new dylib — all
-//! without tearing down the editor App or re-opening the window.
+//! Jackdaw doesn't run cargo itself (outside scaffold + project-open
+//! flows). The user runs `cargo build` in a terminal, rust-analyzer,
+//! an IDE task, or CI. We watch cargo's output directory and react
+//! to a completed write. This avoids fighting editor-specific save
+//! behaviors (atomic rename, tempfile swap) and avoids running cargo
+//! twice when the user already has.
 //!
-//! Game-spawned entities preserve their components across the
-//! swap (they're in the editor's World, not the dylib's memory).
-//! `PlayState::Playing` survives too — systems just re-appear
-//! under a new library. Schema changes are handled by bevy's
-//! reflect registry (re-registration overwrites; fields dropped
-//! from a struct are removed from existing components on next
-//! visit).
-//!
-//! # Toggle
-//!
-//! `HotReloadEnabled` resource is flipped via the File menu. When
-//! off, source changes don't trigger anything.
+//! Hot-swap preserves game-spawned entities and `PlayState`; the
+//! window doesn't flicker. Bevy's reflect registry re-registers
+//! types over any stale entries. Live state carries across reloads.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use bevy::prelude::*;
-use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
-use crate::ext_build::{BuildError, BuildProgress, build_extension_project_with_progress};
+use crate::ext_build::artifact_file_name;
 use crate::project::ProjectRoot;
 
-/// Installs the hot-reload watcher. Active only in `Editor` state
-/// where `ProjectRoot` is present.
+/// Watcher runs only in `AppState::Editor` while `ProjectRoot` is
+/// set. Entering/exiting the Editor state binds/drops the watcher.
 pub struct HotReloadPlugin;
 
 impl Plugin for HotReloadPlugin {
@@ -47,17 +35,12 @@ impl Plugin for HotReloadPlugin {
             .add_systems(OnExit(crate::AppState::Editor), stop_watcher)
             .add_systems(
                 Update,
-                (
-                    drain_source_changes,
-                    poll_reload_build,
-                    poll_install_outcome,
-                    poll_clean_task,
-                )
+                (drain_artifact_changes, poll_install_outcome)
                     .run_if(in_state(crate::AppState::Editor)),
             )
-            // Run install in Last so modifications to `Update`'s
-            // Schedules by the game's `GameApp::add_systems` don't
-            // get clobbered by `Update`'s active `schedule_scope`.
+            // Install runs in Last so Update's schedule_scope isn't
+            // active while the new game's build() mutates schedules.
+            // Matches project_select's apply_pending_install pattern.
             .add_systems(
                 Last,
                 apply_pending_install.run_if(in_state(crate::AppState::Editor)),
@@ -65,10 +48,8 @@ impl Plugin for HotReloadPlugin {
     }
 }
 
-/// User-facing toggle. Default `true` — auto-rebuild on save feels
-/// natural for anyone who just scaffolded a game, and a stray
-/// editor change never hurts (the debounce and in-flight guard
-/// prevent runaway builds). File-menu entry flips this.
+/// File-menu toggle. Off freezes the currently-loaded dylib;
+/// subsequent builds are ignored until it's flipped back on.
 #[derive(Resource)]
 pub struct HotReloadEnabled(pub bool);
 
@@ -78,46 +59,21 @@ impl Default for HotReloadEnabled {
     }
 }
 
-/// Debounce + in-flight tracking for the watcher.
 #[derive(Resource, Default)]
 struct HotReloadState {
-    /// The live watcher handle. Dropping it stops the notify
-    /// thread. Kept as `Option` so we can start/stop on
-    /// `AppState::Editor` enter/exit.
     watcher: Option<RecommendedWatcher>,
-    /// Latest relevant-event timestamp. `drain_source_changes`
-    /// reads this and, after the debounce window, kicks off a
-    /// build.
+    /// Last relevant event's instant. `drain_artifact_changes` stages
+    /// the install after the debounce window elapses.
     pending: Arc<Mutex<Option<Instant>>>,
-    /// In-flight build task. While `Some`, further source events
-    /// update `pending` but don't spawn new builds.
-    build_task: Option<Task<Result<PathBuf, BuildError>>>,
-    /// In-flight `cargo clean -p <crate>` triggered by auto
-    /// recovery when a reload's install fails with SDK symbol
-    /// mismatch.
-    clean_task: Option<Task<Result<(), BuildError>>>,
-    /// `true` once we've run one clean+retry cycle for the current
-    /// pending reload. Stops infinite loops if a second install
-    /// still fails with symbol mismatch.
-    retry_attempted: bool,
-    /// Outcome-tunnel from the commands.queue closure that runs
-    /// install → back to this poller. Same mechanism as
-    /// `project_select`'s `metadata_outcome`.
+    /// `<project>/target/debug/lib<name>.so` or platform equivalent.
+    artifact_path: Option<PathBuf>,
     install_outcome: Option<Arc<Mutex<Option<Result<(), jackdaw_loader::LoadError>>>>>,
-    /// Artifact waiting to be installed by `apply_pending_install`
-    /// in the `Last` schedule. See note on `project_select` for
-    /// why this can't just run inside `commands.queue`.
     pending_install: Option<PathBuf>,
-    /// Shared progress sink the task writes into. Future work:
-    /// render this in the status bar while a hot rebuild runs.
-    #[allow(dead_code)]
-    build_progress: Option<Arc<Mutex<BuildProgress>>>,
-    /// Project being rebuilt. Held so the finish handler can pass
-    /// the right path into the install step.
-    project_dir: Option<PathBuf>,
 }
 
-const DEBOUNCE_WINDOW: Duration = Duration::from_millis(800);
+/// Cargo's write fires a burst of events (Create, Modify, CloseWrite).
+/// Collapse them into one install.
+const DEBOUNCE_WINDOW: Duration = Duration::from_millis(200);
 
 fn start_watcher(
     mut state: ResMut<HotReloadState>,
@@ -132,13 +88,40 @@ fn start_watcher(
     };
     let project_root = project.root.clone();
 
+    let expected_filename = artifact_file_name(&project_root);
+    let target_debug = project_root.join("target").join("debug");
+    let artifact_path = target_debug.join(&expected_filename);
+
+    // notify's `watch()` errors on a nonexistent path. A user who
+    // clones a project but hasn't built it yet lacks target/debug.
+    if !target_debug.is_dir() {
+        if let Err(e) = std::fs::create_dir_all(&target_debug) {
+            warn!(
+                "HotReload: could not create {} for watching: {e}",
+                target_debug.display()
+            );
+            return;
+        }
+    }
+
     let pending = Arc::clone(&state.pending);
     let pending_for_cb = Arc::clone(&pending);
-    let root_for_filter = project_root.clone();
+    let expected_for_cb = expected_filename.clone();
 
     let watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
-        let Ok(event) = res else { return };
-        if !is_relevant_event(&event, &root_for_filter) {
+        let event = match res {
+            Ok(e) => e,
+            Err(e) => {
+                bevy::log::warn!("HotReload watcher error: {e}");
+                return;
+            }
+        };
+        bevy::log::trace!(
+            "HotReload event: kind={:?} paths={:?}",
+            event.kind,
+            event.paths
+        );
+        if !is_artifact_event(&event, &expected_for_cb) {
             return;
         }
         if let Ok(mut slot) = pending_for_cb.lock() {
@@ -151,86 +134,50 @@ fn start_watcher(
         return;
     };
 
-    let src_dir = project_root.join("src");
-    if src_dir.is_dir() {
-        if let Err(e) = watcher.watch(&src_dir, RecursiveMode::Recursive) {
-            warn!("HotReload: failed to watch {}: {e}", src_dir.display());
-        } else {
-            info!("HotReload: watching {}", src_dir.display());
-        }
+    if let Err(e) = watcher.watch(&target_debug, RecursiveMode::NonRecursive) {
+        warn!("HotReload: failed to watch {}: {e}", target_debug.display());
+        return;
     }
-    let cargo_toml = project_root.join("Cargo.toml");
-    if cargo_toml.is_file() {
-        if let Err(e) = watcher.watch(&cargo_toml, RecursiveMode::NonRecursive) {
-            warn!("HotReload: failed to watch {}: {e}", cargo_toml.display());
-        }
-    }
+    info!(
+        "HotReload: watching {} for {}",
+        target_debug.display(),
+        expected_filename
+    );
 
     state.watcher = Some(watcher);
-    state.project_dir = Some(project_root);
+    state.artifact_path = Some(artifact_path);
 }
 
 fn stop_watcher(mut state: ResMut<HotReloadState>) {
-    // Dropping the watcher stops the notify thread.
     state.watcher = None;
-    state.project_dir = None;
+    state.artifact_path = None;
     if let Ok(mut slot) = state.pending.lock() {
         *slot = None;
     }
 }
 
-/// Decide whether a filesystem event from the watcher should
-/// trigger a rebuild. Accepts Modify(Data) and Create on `.rs`
-/// files under `src/` or on `Cargo.toml`. Rejects everything inside
-/// `target/` (notify's recursive mode would otherwise re-fire on
-/// every cargo write and loop us).
-fn is_relevant_event(event: &Event, project_root: &Path) -> bool {
+/// Accept Create and Modify(Data|Any|Name) events whose path ends in
+/// the expected filename. Ignore Metadata-only changes (chmod/touch)
+/// so a no-op touch doesn't trigger a reinstall.
+fn is_artifact_event(event: &Event, expected_filename: &str) -> bool {
     let relevant_kind = matches!(
         event.kind,
         EventKind::Create(_)
             | EventKind::Modify(notify::event::ModifyKind::Data(_))
             | EventKind::Modify(notify::event::ModifyKind::Any)
+            | EventKind::Modify(notify::event::ModifyKind::Name(_))
     );
     if !relevant_kind {
         return false;
     }
-    for path in &event.paths {
-        if path_is_relevant(path, project_root) {
-            return true;
-        }
-    }
-    false
+    event.paths.iter().any(|p| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n == expected_filename)
+    })
 }
 
-fn path_is_relevant(path: &Path, project_root: &Path) -> bool {
-    // Anything inside target/ is cargo's own output — ignore.
-    if path.starts_with(project_root.join("target")) {
-        return false;
-    }
-    // Anything inside .git or other dotdirs — ignore.
-    if path
-        .components()
-        .any(|c| c.as_os_str().to_str().is_some_and(|s| s.starts_with(".git")))
-    {
-        return false;
-    }
-    let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-        return false;
-    };
-    // Editor swap/temp files.
-    if name.ends_with('~') || name.starts_with("#") || name.starts_with(".#") {
-        return false;
-    }
-    if name == "Cargo.toml" {
-        return true;
-    }
-    path.extension().and_then(|e| e.to_str()) == Some("rs")
-}
-
-/// Polled each frame in `Update`. If the debounce window has
-/// elapsed since the last relevant event and no build is in
-/// flight, kick off a new build task.
-fn drain_source_changes(
+fn drain_artifact_changes(
     mut state: ResMut<HotReloadState>,
     enabled: Res<HotReloadEnabled>,
     mut install_status: ResMut<crate::extensions_dialog::InstallStatus>,
@@ -238,14 +185,14 @@ fn drain_source_changes(
     if !enabled.0 {
         return;
     }
-    if state.build_task.is_some() {
+    if state.pending_install.is_some() {
         return;
     }
-    let Some(project_dir) = state.project_dir.clone() else {
+    let Some(artifact) = state.artifact_path.clone() else {
         return;
     };
 
-    let should_build = {
+    let should_install = {
         let Ok(mut slot) = state.pending.lock() else {
             return;
         };
@@ -257,71 +204,36 @@ fn drain_source_changes(
             _ => false,
         }
     };
-    if !should_build {
+    if !should_install {
         return;
     }
 
-    let project_name = project_dir
-        .file_name()
+    if !artifact.exists() {
+        // notify can fire before cargo's rename settles.
+        return;
+    }
+
+    let project_name = artifact
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("project")
-        .to_owned();
-    install_status.message = Some(format!("Rebuilding `{project_name}` after source change…"));
+        .trim_start_matches("lib");
+    install_status.message = Some(format!("New build detected, reloading `{project_name}`..."));
     info!(
-        "HotReload: source changed, rebuilding {}",
-        project_dir.display()
+        "HotReload: build artifact changed, staging install for {}",
+        artifact.display()
     );
 
-    let progress = Arc::new(Mutex::new(BuildProgress::default()));
-    state.build_progress = Some(Arc::clone(&progress));
-
-    let project_for_task = project_dir;
-    let progress_for_task = Arc::clone(&progress);
-    let task = AsyncComputeTaskPool::get().spawn(async move {
-        build_extension_project_with_progress(&project_for_task, Some(progress_for_task))
-    });
-    state.build_task = Some(task);
+    let outcome: Arc<Mutex<Option<Result<(), jackdaw_loader::LoadError>>>> =
+        Arc::new(Mutex::new(None));
+    state.install_outcome = Some(outcome);
+    state.pending_install = Some(artifact);
 }
 
-/// Poll the in-flight build. On success: install the new `.so`
-/// (atomic rename) and respawn jackdaw via `restart_jackdaw`. On
-/// failure: surface the error via `InstallStatus` and leave the
-/// current (old) dylib in place so the user can keep working.
-fn poll_reload_build(
-    mut state: ResMut<HotReloadState>,
-    mut install_status: ResMut<crate::extensions_dialog::InstallStatus>,
-    mut commands: Commands,
-) {
-    let Some(task) = state.build_task.as_mut() else {
-        return;
-    };
-    let Some(result) = future::block_on(future::poll_once(task)) else {
-        return;
-    };
-    state.build_task = None;
-    state.build_progress = None;
-
-    match result {
-        Ok(artifact) => {
-            info!(
-                "HotReload: build complete, scheduling install for {}",
-                artifact.display()
-            );
-            let outcome: Arc<Mutex<Option<Result<(), jackdaw_loader::LoadError>>>> =
-                Arc::new(Mutex::new(None));
-            state.install_outcome = Some(outcome);
-            state.pending_install = Some(artifact);
-        }
-        Err(err) => {
-            warn!("HotReload: build failed: {err}");
-            install_status.message = Some(format!("Hot reload build failed: {err}"));
-        }
-    }
-}
-
-/// Counterpart to `project_select::apply_pending_install`, scheduled
-/// in `Last` so `Update`'s `schedule_scope` isn't active while the
-/// game's `build(&mut GameApp)` mutates `Update`'s Schedules.
+/// Exclusive system in Last. Runs the full
+/// `extensions_dialog::handle_install_from_path` pipeline: atomic
+/// rename into the per-user games dir, teardown of the prior dylib,
+/// dlopen, new build(), catalog update.
 fn apply_pending_install(world: &mut World) {
     let artifact_opt = world
         .resource_mut::<HotReloadState>()
@@ -330,10 +242,7 @@ fn apply_pending_install(world: &mut World) {
     let Some(artifact) = artifact_opt else {
         return;
     };
-    let outcome_arc = world
-        .resource::<HotReloadState>()
-        .install_outcome
-        .clone();
+    let outcome_arc = world.resource::<HotReloadState>().install_outcome.clone();
 
     let result = crate::extensions_dialog::handle_install_from_path(world, artifact);
     match &result {
@@ -352,10 +261,6 @@ fn apply_pending_install(world: &mut World) {
     }
 }
 
-/// Drain the install-outcome tunnel and trigger the auto-recovery
-/// path on SDK symbol mismatch. Mirrors
-/// `project_select::poll_new_project_tasks`'s metadata_outcome
-/// handling.
 fn poll_install_outcome(
     mut state: ResMut<HotReloadState>,
     mut install_status: ResMut<crate::extensions_dialog::InstallStatus>,
@@ -375,76 +280,21 @@ fn poll_install_outcome(
     state.install_outcome = None;
 
     match result {
-        Ok(()) => {
-            state.retry_attempted = false;
-        }
-        Err(err) if err.is_symbol_mismatch() && !state.retry_attempted => {
-            state.retry_attempted = true;
-            let Some(project_dir) = state.project_dir.clone() else {
-                install_status.message =
-                    Some("Hot reload: SDK mismatch, but no project dir recorded".into());
-                return;
-            };
-            install_status.message = Some(format!(
-                "Editor SDK changed — cleaning project cache for `{}`…",
-                project_dir
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("project")
-            ));
-            state.clean_task = Some(AsyncComputeTaskPool::get().spawn(async move {
-                crate::ext_build::cargo_clean_project(&project_dir)
-            }));
+        Ok(()) => {}
+        Err(err) if err.is_symbol_mismatch() => {
+            warn!(
+                "HotReload: SDK symbol mismatch, project was built against a different editor SDK: {err}"
+            );
+            install_status.message = Some(
+                "Hot reload: the new build was compiled against an older editor SDK. \
+                 Run `cargo clean -p <your-crate> && cargo build` and try again."
+                    .into(),
+            );
         }
         Err(err) => {
-            warn!("HotReload: install failed (no retry): {err}");
-            install_status.message = Some(format!(
-                "Hot reload install failed: {err}. Save the file again to retry."
-            ));
-            state.retry_attempted = false;
-        }
-    }
-}
-
-/// After `cargo clean -p <crate>` finishes, kick off a full
-/// rebuild for the project. Subsequent install then takes the
-/// normal path (and now has a fresh cdylib linked against the
-/// current SDK symbols).
-fn poll_clean_task(
-    mut state: ResMut<HotReloadState>,
-    mut install_status: ResMut<crate::extensions_dialog::InstallStatus>,
-) {
-    let Some(task) = state.clean_task.as_mut() else {
-        return;
-    };
-    let Some(result) = future::block_on(future::poll_once(task)) else {
-        return;
-    };
-    state.clean_task = None;
-
-    match result {
-        Ok(()) => {
-            let Some(project_dir) = state.project_dir.clone() else {
-                return;
-            };
-            install_status.message = Some(format!(
-                "Rebuilding `{}` against current SDK…",
-                project_dir
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("project")
-            ));
-            let progress = Arc::new(Mutex::new(BuildProgress::default()));
-            state.build_progress = Some(Arc::clone(&progress));
-            let progress_for_task = Arc::clone(&progress);
-            state.build_task = Some(AsyncComputeTaskPool::get().spawn(async move {
-                build_extension_project_with_progress(&project_dir, Some(progress_for_task))
-            }));
-        }
-        Err(err) => {
-            warn!("HotReload: cargo clean failed: {err}");
-            install_status.message = Some(format!("Hot reload: cargo clean failed: {err}"));
-            state.retry_attempted = false;
+            warn!("HotReload: install failed: {err}");
+            install_status.message =
+                Some(format!("Hot reload install failed: {err}. Rebuild to retry."));
         }
     }
 }

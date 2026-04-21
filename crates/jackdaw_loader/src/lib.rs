@@ -4,15 +4,14 @@
 //!
 //! Add [`DylibLoaderPlugin`] to the editor `App`. During `build` it
 //! walks every configured search path, opens each dynamic library
-//! with `libloading`, looks up the
-//! `jackdaw_extension_entry_v1` symbol (see
-//! [`jackdaw_api::ffi::ENTRY_SYMBOL`]), verifies ABI compatibility,
-//! and — on success — registers the extension through the normal
+//! with `libloading`, looks up the `jackdaw_extension_entry_v1`
+//! symbol (see [`jackdaw_api::ffi::ENTRY_SYMBOL`]), verifies ABI
+//! compatibility, and registers the extension through the normal
 //! [`jackdaw_api::register_extension`] path used for static
 //! extensions.
 //!
-//! The plugin lives in [`LoadedDylibs`] as long as the `App` lives;
-//! unloading a library while systems still reference code inside it
+//! The plugin lives in [`LoadedDylibs`] as long as the `App` lives.
+//! Unloading a library while systems still reference code inside it
 //! is UB, so libraries are only dropped when the `App` is destroyed.
 //!
 //! # Search paths
@@ -24,29 +23,25 @@
 //!
 //! # Safety
 //!
-//! Loading third-party native code is inherently unsafe. The host
-//! and every loaded extension must agree on ABI; the `compat`
-//! module enforces the subset we can check automatically (API
-//! version, Bevy version, build profile). Beyond that, extensions
-//! are trusted to be well-formed: a panic in the entry function is
-//! contained via `catch_unwind`, but a segfault from the extension
-//! will take the process down.
+//! Loading third-party native code is inherently unsafe. Host and
+//! extension must agree on ABI; the `compat` module enforces the
+//! subset we can check automatically (API version, Bevy version,
+//! build profile). A panic in the entry function is caught via
+//! `catch_unwind`, but a segfault in extension code takes the
+//! process down.
 //!
 //! # Shared-type ABI requirement
 //!
-//! For an extension dylib's `register()` body to manipulate host
-//! resources safely, both sides have to share one compiled copy of
-//! the jackdaw types that cross the boundary (so `TypeId::of::<T>()`
-//! agrees on both sides). That's what `jackdaw_api`'s
-//! `dynamic_linking` feature sets up — it links
-//! `jackdaw_dylib`, which is a single `.so` that bundles
-//! `jackdaw_api_internal`, `jackdaw_panels`, and
-//! `jackdaw_commands`. The host binary must be built with the
-//! matching `jackdaw`'s `dylib` feature; otherwise this loader
-//! still successfully reads the entry point and compat stamp, but
-//! the extension panics as soon as it touches
-//! `ExtensionContext::register_window` (or similar) because the
-//! host world's `WindowRegistry` is keyed by a different `TypeId`.
+//! Both sides must share one compiled copy of the jackdaw types
+//! that cross the boundary so `TypeId::of::<T>()` agrees. That's
+//! what `jackdaw_api`'s `dynamic_linking` feature sets up: it links
+//! `jackdaw_dylib`, a single `.so` bundling `jackdaw_api_internal`,
+//! `jackdaw_panels`, and `jackdaw_commands`. The host binary must
+//! be built with `jackdaw`'s `dylib` feature; otherwise this
+//! loader reads the entry point and compat stamp fine but the
+//! extension panics as soon as it touches `ExtensionContext::
+//! register_window` because the host's `WindowRegistry` is keyed by
+//! a different `TypeId`.
 
 mod compat;
 
@@ -96,7 +91,7 @@ pub const DEFAULT_GAMES_SUBDIR: &str = "jackdaw/games";
 /// extension/games watcher skips paths starting with this prefix so
 /// our own in-flight renames don't trip "Dylib changed on disk"
 /// warnings. Shared here rather than duplicated in
-/// `extensions_dialog::install_picked_file` + `extension_watcher`
+/// `extensions_dialog::install_picked_file` and `extension_watcher`
 /// so the two can't drift.
 pub const INSTALL_TEMPFILE_PREFIX: &str = ".jackdaw-install-";
 
@@ -108,14 +103,14 @@ pub const ENV_EXTENSIONS_PATH: &str = "JACKDAW_EXTENSIONS_DIR";
 /// is added to the loader's search paths at startup for games.
 pub const ENV_GAMES_PATH: &str = "JACKDAW_GAMES_DIR";
 
-/// Back-compat alias for `ENV_EXTENSIONS_PATH` — older docs and
-/// scripts reference this name. Prefer the split env vars above.
+/// Back-compat alias for `ENV_EXTENSIONS_PATH`. Older docs and
+/// scripts reference this name; prefer the split env vars above.
 #[deprecated(note = "use ENV_EXTENSIONS_PATH or ENV_GAMES_PATH")]
 pub const ENV_SEARCH_PATH: &str = ENV_EXTENSIONS_PATH;
 
 /// Keeps `libloading::Library` handles alive for the lifetime of the
 /// `App`. The resource is inserted by [`DylibLoaderPlugin::build`]
-/// and never drained — dropping a `Library` while systems still
+/// and never drained; dropping a `Library` while systems still
 /// reference its code is UB.
 #[derive(Resource, Default)]
 pub struct LoadedDylibs {
@@ -357,15 +352,13 @@ enum OpenedDylib {
 }
 
 /// Try to open `path`, dispatching on which entry symbol it
-/// exposes. Game symbol wins if both somehow exist (they shouldn't
-/// — a cdylib should only `export_game!` or `export_extension!`,
-/// not both).
+/// exposes. Game symbol wins if both somehow exist (a cdylib
+/// should only `export_game!` or `export_extension!`, not both).
 #[allow(improper_ctypes_definitions)]
 fn open_and_verify(path: &Path) -> Result<OpenedDylib, LoadError> {
-    // SAFETY: libloading's standard contract — the caller trusts
-    // that `path` is a well-formed dynamic library. If not, the
-    // call returns `Err`. Extensions / games are trusted native
-    // code; the loader does not sandbox them.
+    // SAFETY: libloading's standard contract. Caller trusts `path`
+    // is a well-formed dynamic library; if not, the call returns
+    // `Err`. Extensions and games are trusted native code.
     let lib = unsafe { libloading::Library::new(path)? };
 
     // Try the game symbol first. If it's present, the dylib is a
@@ -433,10 +426,10 @@ fn open_and_verify(path: &Path) -> Result<OpenedDylib, LoadError> {
 }
 
 fn try_load(app: &mut App, path: &Path) -> Result<LoadedKind, LoadError> {
-    // Open the dylib first — `lib` is the libloading handle that
-    // keeps the code mapped for the life of the process. We keep it
-    // by reference via `get_reflect_register` so that lookup succeeds
-    // while the library is still on our side of ownership.
+    // Open the dylib first. `lib` is the libloading handle that
+    // keeps the code mapped for the life of the process; we look
+    // up any extra symbols (like the reflect-register fn) on it
+    // while still holding it on our side of ownership.
     let lib_and_kind = open_and_verify_keep_lib(path)?;
     match lib_and_kind {
         (lib, OpenedKind::Extension { name, ctor }) => {
@@ -487,9 +480,9 @@ fn try_load(app: &mut App, path: &Path) -> Result<LoadedKind, LoadError> {
                 unsafe { build(world_ptr) }
             }));
             if build_result.is_err() {
-                // Build panicked. The library is still loaded — we
-                // keep it anyway rather than risk UB unloading
-                // partially-executed init code.
+                // Build panicked. The library is still loaded; keep
+                // it alive rather than risk UB unloading partially-
+                // executed init code.
                 app.world_mut()
                     .resource_mut::<LoadedDylibs>()
                     .libs
@@ -544,11 +537,11 @@ pub fn load_from_path(world: &mut World, path: &Path) -> Result<LoadedKind, Load
     let lib_and_kind = open_and_verify_keep_lib(path)?;
     match lib_and_kind {
         (lib, OpenedKind::Extension { name, ctor }) => {
-            // Already-registered extensions come through the same
-            // code path when the user re-installs a rebuild. Don't
-            // double-register — registering the same extension twice
-            // produces duplicate windows/operators and a phantom
-            // second catalog entry.
+            // Already-registered extensions come through this path
+            // when the user re-installs a rebuild. Don't double-
+            // register; registering the same extension twice produces
+            // duplicate windows/operators and a phantom second
+            // catalog entry.
             if world
                 .resource::<jackdaw_api::ExtensionCatalog>()
                 .contains(&name)
@@ -694,7 +687,7 @@ fn call_reflect_register_symbol(world: &mut World, lib: &libloading::Library) {
     use jackdaw_api::ffi::{REFLECT_REGISTER_SYMBOL, ReflectRegisterFn};
 
     let Some(registry_res) = world.get_resource::<bevy::ecs::reflect::AppTypeRegistry>() else {
-        info!("reflect-register: AppTypeRegistry missing, skipping");
+        debug!("reflect-register: AppTypeRegistry missing, skipping");
         return;
     };
     let registry_handle = registry_res.clone();
@@ -703,7 +696,7 @@ fn call_reflect_register_symbol(world: &mut World, lib: &libloading::Library) {
         match unsafe { lib.get(REFLECT_REGISTER_SYMBOL) } {
             Ok(s) => s,
             Err(e) => {
-                info!("reflect-register: symbol lookup failed: {e}; dylib has no types to register");
+                debug!("reflect-register: symbol lookup failed: {e}; dylib has no types to register");
                 return;
             }
         };
@@ -718,7 +711,7 @@ fn call_reflect_register_symbol(world: &mut World, lib: &libloading::Library) {
     if call_result.is_err() {
         warn!("reflect-register symbol panicked; types may be missing from the registry");
     } else {
-        info!(
+        debug!(
             "reflect-register: called. Registry size {before} -> {after} \
              ({} new type entries)",
             after.saturating_sub(before)
@@ -730,7 +723,7 @@ fn call_reflect_register_symbol(world: &mut World, lib: &libloading::Library) {
 /// bevy `ComponentId` assigned. Without this sweep, a newly-loaded
 /// game's components stay invisible to the Add Component picker
 /// (`src/inspector/component_picker.rs:108`) until something spawns or
-/// queries them — which for game components won't happen until Play is
+/// queries them, which for game components won't happen until Play is
 /// pressed.
 ///
 /// [`ReflectComponent::register_component`] is idempotent, so this sweep
@@ -748,7 +741,7 @@ fn register_derived_component_ids(world: &mut World) {
     for rc in &reflect_components {
         rc.register_component(world);
     }
-    info!(
+    debug!(
         "register_derived_component_ids: ensured {} ComponentIds registered",
         reflect_components.len()
     );

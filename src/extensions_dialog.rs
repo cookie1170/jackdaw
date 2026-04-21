@@ -374,9 +374,8 @@ fn sync_status_text(
 /// the result.
 ///
 /// Returns `Ok(kind)` on success or `Err(LoadError)` so callers
-/// can inspect the failure — notably
-/// `LoadError::is_symbol_mismatch()` for "SDK rebuilt, stale
-/// project cache" recovery.
+/// can inspect the failure. Use `LoadError::is_symbol_mismatch()`
+/// for "SDK rebuilt, stale project cache" recovery.
 pub fn handle_install_from_path(
     world: &mut World,
     src: std::path::PathBuf,
@@ -414,7 +413,7 @@ fn handle_install(
             if err.is_symbol_mismatch() {
                 // Soft-fail: caller will detect this and run the
                 // auto-clean-and-retry recovery path. Don't update
-                // the install-status message — the retry UI owns it.
+                // the install-status message; the retry UI owns it.
                 format!("SDK mismatch detected; cleaning project cache…")
             } else {
                 format!(
@@ -457,10 +456,27 @@ enum InstallTarget {
 /// the loaded library's code or static data (including `dlopen`
 /// walking `/proc/self/maps`).
 ///
-/// `rename` is atomic on the same filesystem and leaves the old
-/// inode intact for any existing mmap — the old library stays
-/// valid until its handle is dropped; new dlopens see the new
-/// inode.
+/// Install the picked `.so` into the per-user dir with a **unique
+/// filename per install** (e.g., `libmy_game-1745678901234.so`), then
+/// clean up any prior sibling files matching the same basename so the
+/// dir doesn't accumulate stale copies.
+///
+/// Why the unique filename: glibc's `dlopen` caches loaded libraries
+/// by absolute path after realpath resolution. A second `dlopen` of
+/// the same path returns the original handle even if the on-disk
+/// file was atomically replaced; the mapping doesn't re-check inode.
+/// Hot-reloading a game by overwriting one `libmy_game.so` path
+/// would silently return the first-loaded code forever. Giving each
+/// install a fresh path forces glibc to mmap the new file. The old
+/// mapping stays valid for any currently-held fn pointers (like the
+/// catalog's prior `teardown` we call before swapping) until its
+/// `libloading::Library` handle is dropped.
+///
+/// Cleanup after the rename removes any sibling files that share the
+/// same stem (e.g. `libmy_game-*.so`), so at most one file per game
+/// lives in the dir after a successful install. Cleanup failure is
+/// a warning, not an error: the load has already succeeded, and the
+/// stale file will be cleaned on the next install.
 fn install_picked_file(
     src: &std::path::Path,
     target: InstallTarget,
@@ -482,7 +498,21 @@ fn install_picked_file(
             "picked path has no file name",
         )
     })?;
-    let dest = dest_dir.join(file_name);
+
+    // Split `libmy_game.so` into `"libmy_game"` + `".so"` (or `"libmy_game.dylib"`
+    // / `"my_game.dll"` on other platforms). We suffix the stem with a
+    // monotonic millisecond timestamp.
+    let file_name_str = file_name.to_string_lossy();
+    let (stem, ext_with_dot) = match file_name_str.rfind('.') {
+        Some(i) => (&file_name_str[..i], &file_name_str[i..]),
+        None => (file_name_str.as_ref(), ""),
+    };
+    let ts_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let unique_name = format!("{stem}-{ts_ms}{ext_with_dot}");
+    let dest = dest_dir.join(&unique_name);
 
     // Write to a sibling temp path, then atomic-rename. A unique
     // suffix keeps concurrent installs from clobbering each other's
@@ -492,23 +522,67 @@ fn install_picked_file(
         "{}{}-{}",
         jackdaw_loader::INSTALL_TEMPFILE_PREFIX,
         std::process::id(),
-        file_name.to_string_lossy()
+        unique_name
     );
     let temp = dest_dir.join(temp_name);
     std::fs::copy(src, &temp)?;
-    match std::fs::rename(&temp, &dest) {
-        Ok(()) => Ok(dest),
-        Err(e) => {
-            // Best-effort cleanup so we don't leave turds around.
-            let _ = std::fs::remove_file(&temp);
-            Err(e)
+    if let Err(e) = std::fs::rename(&temp, &dest) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(e);
+    }
+
+    // Remove older sibling installs matching the same stem so disk
+    // doesn't accumulate. We keep only the file we just installed.
+    cleanup_prior_installs(&dest_dir, stem, ext_with_dot, &dest);
+
+    Ok(dest)
+}
+
+/// Delete sibling files in `dir` whose name is `<stem>-*<ext>` (the
+/// shape produced by [`install_picked_file`]), except for `keep`.
+/// Also removes the plain `<stem><ext>` (pre-unique-name legacy) if
+/// it exists, so upgrading from the old single-filename install
+/// scheme doesn't leave a stale file behind.
+fn cleanup_prior_installs(
+    dir: &std::path::Path,
+    stem: &str,
+    ext_with_dot: &str,
+    keep: &std::path::Path,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == keep {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        // Skip anything that isn't a sibling install for this stem.
+        // Legacy filename: exactly `<stem><ext>`.
+        // Timestamped filename: `<stem>-<digits><ext>`.
+        let is_legacy = name == format!("{stem}{ext_with_dot}");
+        let is_timestamped = name
+            .strip_prefix(&format!("{stem}-"))
+            .and_then(|rest| rest.strip_suffix(ext_with_dot))
+            .is_some_and(|middle| middle.bytes().all(|b| b.is_ascii_digit()));
+        if !is_legacy && !is_timestamped {
+            continue;
+        }
+        if let Err(e) = std::fs::remove_file(&path) {
+            warn!(
+                "Failed to clean up prior install {}: {e}",
+                path.display()
+            );
         }
     }
 }
 
 /// Peek at the dylib's entry symbol to decide whether it belongs in
 /// `extensions/` or `games/`. Falls back to Extension if the peek
-/// fails — the caller's own load-from-path will surface the real
+/// fails; the caller's own load-from-path will surface the real
 /// error on the follow-up dlopen.
 fn classify_for_install(path: &std::path::Path) -> InstallTarget {
     match jackdaw_loader::peek_kind(path) {

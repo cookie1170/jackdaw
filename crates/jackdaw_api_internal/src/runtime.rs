@@ -1,13 +1,13 @@
-//! Runtime-friendly game plugin API — the foundation for
-//! in-process hot reload.
+//! Runtime-friendly game plugin API: the foundation for in-process
+//! hot reload.
 //!
 //! # Why not use bevy's `Plugin` trait directly?
 //!
 //! Bevy's `Plugin::build(&self, app: &mut App)` needs `&mut App`.
 //! After `App::run()` is called, bevy's internals move the `App`
 //! into the runner's state (see `core::mem::replace` in
-//! `bevy_app::App::run`) — there's no safe way to recover a
-//! stable `*mut App` at runtime for a hot-reload swap.
+//! `bevy_app::App::run`); there's no safe way to recover a stable
+//! `*mut App` at runtime for a hot-reload swap.
 //!
 //! Every operation a game plugin actually performs on `App`
 //! (registering systems, observers, resources, reflect types) has
@@ -32,15 +32,15 @@
 //! * Reflect-registered types that the game added are tracked so
 //!   teardown can remove them from `AppTypeRegistry`.
 //!
-//! When the user saves a source file, the hot-reload driver runs
-//! an exclusive system that:
+//! When a fresh build lands, the hot-reload driver runs an
+//! exclusive system that:
 //!
-//! 1. Calls `game.teardown(&mut ctx)` — clears all tracked
-//!    registrations.
-//! 2. Drops the old `libloading::Library` handle — safe because
-//!    step 1 removed every live reference to code inside it.
+//! 1. Calls `game.teardown(&mut ctx)` to clear tracked registrations.
+//! 2. Drops the old `libloading::Library` handle (safe because step
+//!    1 removed every live reference to code inside it).
 //! 3. dlopens the freshly built `.so` and calls its new
-//!    `build(&mut ctx)` — which re-registers new systems.
+//!    `build(&mut ctx)`, which re-registers systems against the new
+//!    code.
 //!
 //! World state (entities spawned by the game, their components)
 //! survives the swap untouched; the game picks up right where it
@@ -146,7 +146,7 @@ impl<'w> GameApp<'w> {
         Self { world, name }
     }
 
-    /// Access the underlying `&mut World`. Use sparingly — state
+    /// Access the underlying `&mut World`. Use sparingly; state
     /// touched directly here won't be tracked for teardown.
     pub fn world_mut(&mut self) -> &mut World {
         self.world
@@ -161,10 +161,15 @@ impl<'w> GameApp<'w> {
     ) -> &mut Self {
         let set = GameSystems(self.name);
         let configured = systems.in_set(set);
+        let interned = schedule.clone().intern();
+        bevy::log::debug!(
+            "GameApp::add_systems called by `{}` into schedule {:?}",
+            self.name,
+            interned
+        );
         self.world
             .resource_mut::<Schedules>()
-            .add_systems(schedule.clone(), configured);
-        let interned = schedule.intern();
+            .add_systems(schedule, configured);
         let entry = self
             .world
             .get_resource_or_insert_with::<GameRegistry>(GameRegistry::default)
@@ -238,35 +243,52 @@ impl<'w> GameApp<'w> {
             return;
         };
 
-        // 1) Systems — SKIPPED.
+        // 1) Systems: drop the old dylib's systems out of every
+        //    schedule the build function touched. `RemoveSystemsOnly`
+        //    (not `RemoveSetAndSystems`) is deliberate: evicting the
+        //    set from the schedule graph leaves dangling
+        //    `SystemSetKey` references in any ordering or run-
+        //    condition edges other schedules (e.g. `Main`) still
+        //    hold, and bevy panics with "System set with key
+        //    SystemSetKey(...) does not exist in the schedule" on
+        //    the next run.
         //
-        // `Schedules::remove_systems_in_set` internally calls
-        // `world.resource_scope::<Schedules, _>` recursively, which
-        // panics if we're already holding Schedules in scope *or*
-        // if we call it from within any other `schedule_scope`
-        // (which any `commands.queue` closure is — it runs during
-        // `apply_deferred` inside the containing schedule). Across
-        // the `extern "C"` FFI boundary that panic becomes an
-        // abort, which killed the process.
+        //    Keeping the set in place and just dropping its members
+        //    avoids that. The set stays empty until the new dylib's
+        //    `build()` re-adds systems via `.in_set(GameSystems(
+        //    name))`, which slot back into the same set and preserve
+        //    every ordering edge.
         //
-        // Trade-off for v1: don't try to remove old systems at all.
-        // They stay registered, but their `Query<… With<Component>>`
-        // sees no matching entities once we despawn the
-        // `GameRegistered` entities below, so they're effectively
-        // no-ops. The new build's `add_systems` registers fresh
-        // systems; both sets run against the newly-spawned entities.
-        //
-        // Concrete consequence: a component touched by both the
-        // old and new version of a system (e.g. `Transform` via
-        // rotate_y) gets mutated twice per frame → visible at ~2x
-        // the declared speed. Documented limitation. A future fix
-        // needs a deferred-reload path (set `PendingDylibInstall`,
-        // run install from a dedicated exclusive system in `First`
-        // or `Last` so no schedule_scope is active on `Update`).
-        let _ = &book.schedules;
+        // `resource_scope` moves `Schedules` out of the World so
+        // `remove_systems_in_set` gets disjoint `&mut World` and
+        // `&mut Schedules` access.
+        use bevy::ecs::schedule::{ScheduleCleanupPolicy, Schedules};
+        let name = self.name;
+        let schedule_labels: Vec<_> = book.schedules.clone();
+        self.world
+            .resource_scope::<Schedules, _>(|world, mut schedules| {
+                for label in &schedule_labels {
+                    match schedules.remove_systems_in_set(
+                        *label,
+                        GameSystems(name),
+                        world,
+                        ScheduleCleanupPolicy::RemoveSystemsOnly,
+                    ) {
+                        Ok(count) => bevy::log::debug!(
+                            "teardown: removed {count} systems from GameSystems({name}) \
+                             in schedule {:?}",
+                            label
+                        ),
+                        Err(e) => bevy::log::warn!(
+                            "teardown: remove_systems_in_set for GameSystems({name}) \
+                             in schedule {:?} failed: {e:?}",
+                            label
+                        ),
+                    }
+                }
+            });
 
         // 2) Observer entities tagged with `GameRegistered(name)`.
-        let name = self.name;
         let mut to_despawn = Vec::new();
         let mut q = self.world.query::<(bevy::prelude::Entity, &GameRegistered)>();
         for (entity, tag) in q.iter(self.world) {
@@ -280,7 +302,7 @@ impl<'w> GameApp<'w> {
             }
         }
 
-        // 3) Resources — `World::remove_resource_by_id`.
+        // 3) Resources: `World::remove_resource_by_id`.
         for id in &book.resources {
             if let Some(component_id) = self.world.components().get_resource_id(*id) {
                 self.world.remove_resource_by_id(component_id);
@@ -289,13 +311,12 @@ impl<'w> GameApp<'w> {
 
         // 4) Reflect type registry entries.
         //
-        // bevy 0.18's `TypeRegistry` has no `remove` method — entries
-        // stay. This is almost always fine: on reload the game's
-        // `build` re-registers the same type (same `TypePath`),
-        // which overwrites the previous entry. The leak is one
-        // `TypeRegistration` per type per reload cycle, bounded by
-        // the number of unique game types the user ever ships —
-        // negligible.
+        // bevy 0.18's `TypeRegistry` has no `remove` method. Entries
+        // stay. On reload the game's `build` re-registers the same
+        // type (same `TypePath`) and overwrites the previous entry.
+        // Leak is one `TypeRegistration` per type per reload cycle,
+        // bounded by the number of unique game types the user
+        // ever ships.
         let _ = &book.reflect_types;
     }
 

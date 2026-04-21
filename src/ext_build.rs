@@ -420,7 +420,7 @@ fn package_name_from_manifest(project_dir: &Path) -> String {
 /// name. Falls back to `libunnamed.<ext>` if the manifest doesn't
 /// declare a name (which cargo would have rejected anyway, but it
 /// keeps this helper infallible).
-fn artifact_file_name(project_dir: &Path) -> String {
+pub(crate) fn artifact_file_name(project_dir: &Path) -> String {
     let package_name = package_name_from_manifest(project_dir);
 
     if cfg!(target_os = "windows") {

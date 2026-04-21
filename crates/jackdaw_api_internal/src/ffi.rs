@@ -15,7 +15,7 @@
 //! ([`API_VERSION`] / [`BEVY_VERSION`] / [`PROFILE`]); the loader
 //! verifies them identically.
 //!
-//! Authors don't write these structs by hand — the
+//! Authors don't write these structs by hand. The
 //! [`export_extension!`](crate::export_extension) and
 //! [`export_game!`](crate::export_game) macros emit the entry
 //! functions. The loader lives in `crates/jackdaw_loader`.
@@ -25,12 +25,12 @@
 //! All three embedded version fields must match host values
 //! exactly:
 //!
-//! * [`API_VERSION`] — bumped on any breaking change to
+//! * [`API_VERSION`]: bumped on any breaking change to
 //!   `JackdawExtension`, the FFI struct layout, or entry semantics.
-//! * [`BEVY_VERSION`] — Bevy minor-version string. Bevy's types
+//! * [`BEVY_VERSION`]: Bevy minor-version string. Bevy's types
 //!   (`App`, `World`, `Commands`) appear in the extension's vtable,
 //!   so any Bevy version change risks vtable drift.
-//! * [`PROFILE`] — debug vs release. The two are ABI-incompatible in
+//! * [`PROFILE`]: debug vs release. The two are ABI-incompatible in
 //!   practice (different feature combinations, different layout
 //!   optimisations).
 
@@ -74,41 +74,35 @@ pub const ENTRY_SYMBOL: &[u8] = b"jackdaw_extension_entry_v1\0";
 /// [`ENTRY_SYMBOL`] is looked up next.
 pub const GAME_ENTRY_SYMBOL: &[u8] = b"jackdaw_game_entry_v1\0";
 
-/// Optional symbol each extension / game dylib may expose to register
-/// its own `#[derive(Reflect)]` types into the host's
+/// Optional symbol each extension or game dylib may expose to
+/// register its own `#[derive(Reflect)]` types into the host's
 /// `AppTypeRegistry` after `dlopen`. The loader calls it with a
 /// mutable reference to the host's `TypeRegistry` right after
 /// `dlopen` succeeds and before invoking `build`.
 ///
-/// The symbol is optional: a dylib without it simply contributes no
-/// types, and the loader skips this step.
+/// A dylib without this symbol contributes no types; the loader
+/// skips the step.
 ///
-/// Jackdaw provides the body automatically — each scaffolded project
-/// ships with a `build.rs` that scans its `src/` for
-/// `#[derive(Reflect)]` and generates explicit
-/// `registry.register::<T>()` lines inside
-/// `$OUT_DIR/__jackdaw_reflect_types.rs`, which the
-/// [`export_game!`](crate::export_game) /
+/// Jackdaw's scaffolded projects ship a `build.rs` that scans
+/// `src/` for `#[derive(Reflect)]` and writes explicit
+/// `registry.register::<T>()` lines to
+/// `$OUT_DIR/__jackdaw_reflect_types.rs`. The
+/// [`export_game!`](crate::export_game) and
 /// [`export_extension!`](crate::export_extension) macros `include!`
-/// into a `#[unsafe(no_mangle)] extern "Rust" fn` wrapper named
-/// `jackdaw_register_reflect_types_v1`. No user code writes these
-/// registrations by hand.
+/// that file into a `#[unsafe(no_mangle)] extern "Rust" fn`
+/// wrapper named `jackdaw_register_reflect_types_v1`.
 ///
-/// This pattern is the canonical Rust approach for auto-registering
-/// types across `dlopen`: dexterous_developer uses the same
-/// exported-symbol approach. We do **not** reach across the boundary
-/// into bevy's `inventory`-based `AutomaticReflectRegistrations` —
-/// that breaks under `bevy/dynamic_linking` because the shared-dylib
-/// proxy doesn't preserve inventory's private invariants for
-/// external consumers.
+/// This is the pattern dexterous_developer uses. We don't reach
+/// across the boundary into bevy's `inventory`-based
+/// `AutomaticReflectRegistrations`: that breaks under
+/// `bevy/dynamic_linking` because the shared-dylib proxy doesn't
+/// preserve inventory's private invariants for external consumers.
 pub const REFLECT_REGISTER_SYMBOL: &[u8] = b"jackdaw_register_reflect_types_v1\0";
 
 /// Signature for [`REFLECT_REGISTER_SYMBOL`]. `extern "Rust"` is
-/// correct because both sides share `TypeRegistry`'s type layout
-/// through the same `libjackdaw_sdk.so` (via the
-/// `bevy/dynamic_linking` feature + jackdaw's rustc wrapper). The
-/// FFI boundary only needs ABI stability for the `&mut TypeRegistry`
-/// receiver, which is a pointer into the shared dylib's data.
+/// sound because both sides share `TypeRegistry`'s type layout
+/// through `libjackdaw_sdk.so` (via `bevy/dynamic_linking` plus
+/// jackdaw's rustc wrapper).
 pub type ReflectRegisterFn = unsafe extern "Rust" fn(&mut bevy::reflect::TypeRegistry);
 
 /// Shape returned by every dylib extension's entry function.
@@ -143,10 +137,10 @@ pub struct ExtensionEntry {
 /// Shape returned by every game dylib's entry function.
 ///
 /// v2 takes `*mut World` (not `*mut App`) so it can be called at
-/// runtime from any exclusive system — not just during app
-/// construction. This is the foundation for hot reload: the loader
-/// can call `teardown` then `build` from a regular system, without
-/// needing to preserve a `*mut App` past `App::run`.
+/// runtime from any exclusive system, not just during app
+/// construction. That lets the hot-reload loader call `teardown`
+/// then `build` from a regular system without needing to preserve
+/// a `*mut App` past `App::run`.
 ///
 /// # Safety
 ///
