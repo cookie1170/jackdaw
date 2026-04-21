@@ -1,4 +1,4 @@
-use bevy::{picking::hover::Hovered, prelude::*};
+use bevy::{picking::hover::Hovered, prelude::*, window::PrimaryWindow};
 
 use crate::{popover, tokens};
 
@@ -12,8 +12,6 @@ pub(super) fn plugin(app: &mut App) {
 #[derive(Component)]
 pub struct Tooltip(pub String);
 
-// TODO: move tooltip functionality from jackdaw::layout to here
-
 #[derive(Resource, Default)]
 pub struct ActiveTooltip(pub Option<Entity>);
 
@@ -22,7 +20,10 @@ pub fn update_toolbar_tooltips(
     buttons: Query<(Entity, &Tooltip, &Hovered), Changed<Hovered>>,
     mut commands: Commands,
     mut active: ResMut<ActiveTooltip>,
+    window: Single<&Window, With<PrimaryWindow>>,
 ) {
+    // TODO: only show this after hovering for n seconds
+    let cursor_pos = window.cursor_position();
     for (entity, tooltip, hovered) in &buttons {
         if hovered.get() {
             if let Some(old) = active.0.take() {
@@ -31,8 +32,9 @@ pub fn update_toolbar_tooltips(
             let tip = commands
                 .spawn(popover::popover(
                     popover::PopoverProps::new(entity)
-                        .with_placement(popover::PopoverPlacement::Bottom)
-                        .with_padding(4.0)
+                        .with_position(cursor_pos)
+                        .with_placement(popover::PopoverPlacement::BottomStart)
+                        .with_padding(10.0)
                         .with_z_index(300),
                 ))
                 .id();

@@ -62,7 +62,10 @@ pub fn deactivate_trigger(
 }
 
 #[derive(Component)]
-pub struct PopoverAnchor(pub Entity);
+pub struct PopoverAnchor {
+    pub entity: Entity,
+    pub position: Option<Vec2>,
+}
 
 #[derive(Component, Default)]
 struct PopoverLayoutReady(bool);
@@ -149,6 +152,7 @@ pub struct PopoverProps {
     pub padding: f32,
     pub gap: f32,
     pub z_index: i32,
+    pub position: Option<Vec2>,
 }
 
 impl PopoverProps {
@@ -160,7 +164,13 @@ impl PopoverProps {
             padding: 6.0,
             gap: 0.0,
             z_index: 100,
+            position: None,
         }
+    }
+
+    pub fn with_position(mut self, position: impl Into<Option<Vec2>>) -> Self {
+        self.position = position.into();
+        self
     }
 
     pub fn with_placement(mut self, placement: PopoverPlacement) -> Self {
@@ -197,13 +207,17 @@ pub fn popover(props: PopoverProps) -> impl Bundle {
         padding,
         gap,
         z_index,
+        position,
     } = props;
 
     let base_node = node.unwrap_or_default();
 
     (
         EditorPopover,
-        PopoverAnchor(anchor),
+        PopoverAnchor {
+            entity: anchor,
+            position,
+        },
         PopoverLayoutReady::default(),
         placement,
         Hovered::default(),
@@ -220,7 +234,7 @@ pub fn popover(props: PopoverProps) -> impl Bundle {
         Visibility::Hidden,
         BackgroundColor(BACKGROUND_COLOR.into()),
         BorderColor::all(BORDER_COLOR),
-        ZIndex(z_index),
+        GlobalZIndex(z_index),
     )
 }
 
@@ -237,11 +251,9 @@ fn handle_popover_position(
         With<EditorPopover>,
     >,
     anchors: Query<(&ComputedNode, &UiGlobalTransform)>,
-    windows: Query<&Window, With<PrimaryWindow>>,
+    window: Single<&Window, With<PrimaryWindow>>,
 ) {
-    let Ok(window) = windows.single() else {
-        return;
-    };
+    let window = window.into_inner();
     let window_size = Vec2::new(window.width(), window.height());
 
     for (
@@ -253,23 +265,28 @@ fn handle_popover_position(
         mut layout_ready,
     ) in &mut popovers
     {
-        let Ok((anchor_computed, anchor_transform)) = anchors.get(anchor_ref.0) else {
+        let Ok((anchor_computed, anchor_transform)) = anchors.get(anchor_ref.entity) else {
             continue;
         };
 
-        let scale = anchor_computed.inverse_scale_factor();
-        let anchor_center = anchor_transform.translation * scale;
-        let anchor_size = anchor_computed.size() * scale;
         let popover_size = popover_computed.size() * popover_computed.inverse_scale_factor();
 
         if popover_size.x == 0.0 || popover_size.y == 0.0 {
             continue;
         }
 
-        let anchor_top_left = Vec2::new(
-            anchor_center.x - anchor_size.x * 0.5,
-            anchor_center.y - anchor_size.y * 0.5,
-        );
+        let (anchor_top_left, anchor_size) = if let Some(pos) = anchor_ref.position {
+            (pos, Vec2::ZERO)
+        } else {
+            let scale = anchor_computed.inverse_scale_factor();
+            let anchor_center = anchor_transform.translation * scale;
+            let anchor_size = anchor_computed.size() * scale;
+            let top_left = Vec2::new(
+                anchor_center.x - anchor_size.x * 0.5,
+                anchor_center.y - anchor_size.y * 0.5,
+            );
+            (top_left, anchor_size)
+        };
 
         let mut pos = anchor_top_left + placement.offset(anchor_size, popover_size);
 
@@ -325,7 +342,7 @@ fn handle_popover_dismiss(
         // Don't dismiss on click if the anchor (trigger) is hovered,
         // let the anchor's click handler manage open/close toggling.
         if clicked && !esc_pressed {
-            let anchor_is_hovered = anchor_hovered.get(anchor.0).is_ok_and(|h| h.get());
+            let anchor_is_hovered = anchor_hovered.get(anchor.entity).is_ok_and(|h| h.get());
             if anchor_is_hovered {
                 continue;
             }
@@ -361,14 +378,14 @@ fn is_nested_in_popover(
     let Ok((_, anchor, _)) = popovers.get(popover_entity) else {
         return false;
     };
-    if is_descendant_of(anchor.0, target, parents) {
+    if is_descendant_of(anchor.entity, target, parents) {
         return true;
     }
     for (intermediate, _, _) in popovers.iter() {
         if intermediate == target || intermediate == popover_entity {
             continue;
         }
-        if is_descendant_of(anchor.0, intermediate, parents)
+        if is_descendant_of(anchor.entity, intermediate, parents)
             && is_nested_in_popover(intermediate, target, popovers, parents)
         {
             return true;

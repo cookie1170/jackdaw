@@ -227,22 +227,19 @@ fn spawn_dropdown(commands: &mut Commands, x: f32, y: f32, actions: &[(String, S
             continue;
         }
 
-        commands.entity(dropdown).with_children(|spawner| {
-            let mut entity = spawner.spawn((
-                MenuBarDropdownItem {
-                    action: action.clone(),
-                },
-                button(
-                    ButtonProps::new(label.clone())
-                        .with_variant(ButtonVariant::Ghost)
-                        // TODO: add keybind as subtitle
-                        .align_left(),
-                ),
-            ));
-            if let Some(tooltip) = action.strip_prefix("op:") {
-                entity.insert(Tooltip(tooltip.to_string()));
-            }
-        });
+        commands.entity(dropdown).with_child((
+            MenuBarDropdownItem {
+                action: action.clone(),
+            },
+            button(
+                ButtonProps::new(label.clone())
+                    .with_variant(ButtonVariant::Ghost)
+                    // TODO: add keybind as subtitle
+                    .align_left(),
+            ),
+            // TODO: show this tooltip only when the user has opted into dev stuff
+            Tooltip(dbg!(action.to_string())),
+        ));
     }
 
     dropdown
