@@ -45,9 +45,9 @@ pub struct ConnectionView {
 pub struct GhostConnection;
 
 /// Marker added to every `Connection` data entity whose source or target
-/// terminal is currently being hovered with Alt held down. The connection
-/// renderer fades wires carrying this marker to signal they'll be removed
-/// on click.
+/// terminal is currently being hovered with Right Click held down. The
+/// connection renderer fades wires carrying this marker to signal they'll
+/// be removed on click.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct PendingRemove;
 
@@ -69,7 +69,7 @@ const SNAP_RADIUS_PX: f32 = 40.0;
 /// Full-opacity wire color.
 const WIRE_COLOR: Vec4 = Vec4::new(0.6, 0.6, 0.7, 1.0);
 /// Dimmed wire color applied when a connection has a [`PendingRemove`]
-/// marker (alt+hover on one of its endpoints).
+/// marker (right+hover on one of its endpoints).
 const WIRE_COLOR_PENDING_REMOVE: Vec4 = Vec4::new(0.95, 0.35, 0.35, 0.45);
 /// Ghost color when the drag is free (no snap target yet). Warm
 /// translucent gray signals "free-floating end".
@@ -338,23 +338,23 @@ pub fn update_ghost_wire(
 }
 
 /// Add [`PendingRemove`] to every connection touching a terminal the user
-/// is currently hovering while holding Alt. Removes the marker from
+/// is currently hovering while holding Right. Removes the marker from
 /// connections that no longer qualify.
 ///
 /// Runs in `Update`. Combined with [`update_connection_endpoints`]'s
 /// alpha-switching logic this fades wires the user is about to delete.
 pub fn update_pending_remove_markers(
-    keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
     hover_map: Res<bevy::picking::hover::HoverMap>,
     terminal_views: Query<&GraphTerminalView>,
     connections: Query<(Entity, &Connection)>,
     marked: Query<Entity, With<PendingRemove>>,
     mut commands: Commands,
 ) {
-    let alt_held = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+    let right_held = mouse.pressed(MouseButton::Right);
 
     let mut target_connections: HashSet<Entity> = HashSet::new();
-    if alt_held {
+    if right_held {
         // Collect every terminal the pointer is currently over.
         let mut hovered: Vec<(Entity, TerminalDirection, u32)> = Vec::new();
         for pointer_map in hover_map.values() {

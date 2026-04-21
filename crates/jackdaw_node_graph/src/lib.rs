@@ -126,7 +126,7 @@ impl Plugin for NodeGraphPlugin {
         // before node observers so propagation can be stopped on the
         // handled path before the event bubbles to the node root.
         app.add_observer(interaction::on_terminal_click)
-            .add_observer(interaction::on_terminal_alt_click)
+            .add_observer(interaction::on_terminal_right_click)
             .add_observer(interaction::on_terminal_drag_start)
             .add_observer(interaction::on_terminal_drag)
             .add_observer(interaction::on_terminal_drag_end)

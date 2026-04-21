@@ -352,22 +352,18 @@ pub fn on_terminal_click(mut event: On<Pointer<Click>>, terminals: Query<&GraphT
     event.propagate(false);
 }
 
-/// Alt+click on a terminal removes every connection touching it.
+/// Right click on a terminal removes every connection touching it.
 ///
 /// Simpler than hit-testing the wire's Bezier curve on the CPU; good enough
 /// for Phase 3. Each removal is pushed as an `EditorCommand` so undo/redo
 /// works automatically.
-pub fn on_terminal_alt_click(
+pub fn on_terminal_right_click(
     mut event: On<Pointer<Click>>,
     terminals: Query<&GraphTerminalView>,
-    keys: Res<ButtonInput<KeyCode>>,
     connections: Query<(Entity, &Connection, Option<&ChildOf>)>,
     mut commands: Commands,
 ) {
-    if event.button != PointerButton::Primary {
-        return;
-    }
-    if !keys.pressed(KeyCode::AltLeft) && !keys.pressed(KeyCode::AltRight) {
+    if event.button != PointerButton::Secondary {
         return;
     }
     let Ok(term) = terminals.get(event.event_target()) else {
