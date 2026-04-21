@@ -126,7 +126,7 @@ pub trait JackdawExtension: Send + Sync + 'static + DynJackdawExtension {
     ///
     /// Defaults to no-op; override only if the extension adds BEI
     /// contexts.
-    // TODO: this leaks memory when the extension is disabled
+    // FIXME: this leaks memory when the extension is disabled
     #[expect(unused_variables, reason = "The default implementation does nothing")]
     fn register_input_context(app: &mut App)
     where
@@ -342,7 +342,7 @@ impl<'a> ExtensionContext<'a> {
                             .operator(O::ID)
                             .settings(CallOperatorSettings {
                                 execution_context: ExecutionContext::Invoke,
-                                ..default()
+                                creates_history_entry: true,
                             })
                             .call()
                     });

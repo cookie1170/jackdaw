@@ -33,7 +33,7 @@ use jackdaw_jsn::{Brush, BrushFaceData, BrushGroup, BrushPlane};
 pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
     ctx.entity_mut()
         .with_related::<ActionOf<CoreExtensionInputContext>>((
-            Action::<DrawBrush>::new(),
+            Action::<ConfirmDrawBrushOp>::new(),
             bindings![(MouseButton::Left, Press::default()),],
         ))
         .with_related::<ActionOf<CoreExtensionInputContext>>((
@@ -45,17 +45,13 @@ pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
         ));
     ctx.register_operator::<ActivateDrawBrushModalOp>()
         .register_operator::<AddBrushOp>()
+        .register_operator::<ConfirmDrawBrushOp>()
         .register_menu_entry(MenuEntryDescriptor {
             menu: "Add".to_string(),
             label: ActivateDrawBrushModalOp::LABEL.to_string(),
             operator_id: ActivateDrawBrushModalOp::ID,
         });
-    ctx.add_observer(on_draw_brush);
 }
-
-#[derive(Component, InputAction)]
-#[action_output(bool)]
-struct DrawBrush;
 
 #[operator(id = "viewport.draw_brush_modal", label = "Draw Brush", cancel = cancel_draw_brush_modal, modal = true)]
 pub fn activate_draw_brush_modal(
@@ -113,31 +109,32 @@ fn cancel_draw_brush_modal(mut draw_state: ResMut<DrawBrushState>) {
     draw_state.active = None;
 }
 
-fn on_draw_brush(
-    _: On<Fire<DrawBrush>>,
+#[operator(id = "draw_brush.confirm", label = "Draw Brush (Confirm)", is_available = is_in_draw_brush_modal)]
+fn confirm_draw_brush(
+    _: In<OperatorParameters>,
     mut draw_state: ResMut<DrawBrushState>,
     windows: Query<&Window>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainViewportCamera>>,
     viewport_query: Query<(&ComputedNode, &UiGlobalTransform), With<SceneViewport>>,
     mut commands: Commands,
-) {
+) -> OperatorResult {
     let Some(ref mut active) = draw_state.active else {
-        return;
+        return OperatorResult::Cancelled;
     };
 
     // Verify cursor is in viewport
     let Ok(window) = windows.single() else {
-        return;
+        return OperatorResult::Cancelled;
     };
     let Some(cursor_pos) = window.cursor_position() else {
-        return;
+        return OperatorResult::Cancelled;
     };
     let Ok((camera, _)) = camera_query.single() else {
-        return;
+        return OperatorResult::Cancelled;
     };
     let Some(viewport_cursor) = window_to_viewport_cursor(cursor_pos, camera, &viewport_query)
     else {
-        return;
+        return OperatorResult::Cancelled;
     };
 
     match active.phase {
@@ -152,13 +149,13 @@ fn on_draw_brush(
         }
         DrawPhase::DrawingFootprint => {
             if active.drag_footprint {
-                return;
+                return OperatorResult::Cancelled;
             }
             let delta = active.corner2 - active.corner1;
             if delta.dot(active.plane.axis_u).abs() < MIN_FOOTPRINT_SIZE
                 || delta.dot(active.plane.axis_v).abs() < MIN_FOOTPRINT_SIZE
             {
-                return;
+                return OperatorResult::Cancelled;
             }
             active.phase = DrawPhase::ExtrudingDepth;
             active.extrude_start_cursor = viewport_cursor;
@@ -189,7 +186,7 @@ fn on_draw_brush(
         }
         DrawPhase::ExtrudingDepth => {
             if active.depth.abs() < MIN_EXTRUDE_DEPTH {
-                return; // No depth, keep extruding
+                return OperatorResult::Cancelled; // No depth, keep extruding
             }
             let active = active.clone();
             draw_state.active = None;
@@ -206,6 +203,11 @@ fn on_draw_brush(
             }
         }
     }
+    OperatorResult::Cancelled
+}
+
+fn is_in_draw_brush_modal(active: ActiveModalQuery) -> bool {
+    active.is_operator(ActivateDrawBrushModalOp::ID)
 }
 
 #[operator(id = "mesh.add_brush")]

@@ -73,7 +73,7 @@ impl Default for ResourceId {
 /// Holds the `SystemId`s that the dispatcher runs. An observer on
 /// `On<Remove, OperatorEntity>` unregisters those systems when this entity
 /// despawns, and keeps the [`OperatorIndex`] in sync.
-#[derive(Component, Clone)]
+#[derive(Component, Debug, Clone)]
 pub struct OperatorEntity {
     pub(crate) id: &'static str,
     pub(crate) label: &'static str,

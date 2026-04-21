@@ -779,7 +779,13 @@ fn toolbar_edit_button(
                             }
                         }
                     }
-                    EditToolButton::Operator(op) => commands.operator(op).call(),
+                    EditToolButton::Operator(op) => commands
+                        .operator(op)
+                        .settings(CallOperatorSettings {
+                            execution_context: ExecutionContext::Invoke,
+                            creates_history_entry: true,
+                        })
+                        .call(),
                 }
             },
         ),

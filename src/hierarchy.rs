@@ -1019,7 +1019,7 @@ fn on_context_menu_action(
                     .operator(operator_id)
                     .settings(CallOperatorSettings {
                         execution_context: jackdaw_api::prelude::ExecutionContext::Invoke,
-                        ..default()
+                        creates_history_entry: true,
                     })
                     .call()
             });

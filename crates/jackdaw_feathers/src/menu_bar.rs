@@ -238,7 +238,7 @@ fn spawn_dropdown(commands: &mut Commands, x: f32, y: f32, actions: &[(String, S
                     .align_left(),
             ),
             // TODO: show this tooltip only when the user has opted into dev stuff
-            Tooltip(dbg!(action.to_string())),
+            Tooltip(action.to_string()),
         ));
     }
 

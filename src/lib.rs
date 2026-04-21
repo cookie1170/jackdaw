@@ -2091,7 +2091,7 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
                     .operator(operator_id)
                     .settings(CallOperatorSettings {
                         execution_context: ExecutionContext::Invoke,
-                        ..default()
+                        creates_history_entry: true,
                     })
                     .call()
             });

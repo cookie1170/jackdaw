@@ -215,7 +215,7 @@ pub struct CallOperatorSettings {
 impl Default for CallOperatorSettings {
     fn default() -> Self {
         Self {
-            creates_history_entry: true,
+            creates_history_entry: false,
             execution_context: default(),
         }
     }
@@ -389,10 +389,8 @@ fn is_op_running(
 fn dispatch_operator(
     In((id, params, settings)): In<(Cow<'static, str>, OperatorParameters, CallOperatorSettings)>,
     world: &mut World,
-    active: &mut SystemState<Option<Single<&OperatorEntity, With<ActiveModalOperator>>>>,
+    active: &mut SystemState<ActiveModalQuery>,
 ) -> Result<OperatorResult, CallOperatorError> {
-    info!("OPERATOR: {id}");
-
     let Some(op_entity) = world
         .resource::<OperatorIndex>()
         .by_id
@@ -406,10 +404,9 @@ fn dispatch_operator(
     };
 
     if op.modal
-        && let Some(active) = active.get(world)
-        && active.id != id.as_ref()
+        && let Some(active_op) = active.get(world).get_operator()
     {
-        return Err(CallOperatorError::ModalAlreadyActive(active.id));
+        return Err(CallOperatorError::ModalAlreadyActive(active_op.id));
     }
 
     if let Some(check) = op.availability_check {
@@ -417,7 +414,14 @@ fn dispatch_operator(
             .run_system(check)
             .map_err(|_| CallOperatorError::NotAvailable)?;
         if !available {
-            return Err(CallOperatorError::NotAvailable);
+            // FIXME: this should read
+            // return Err(CallOperatorError::NotAvailable);
+            // but this is much too chatty for the default error handler. Since we don't have severities on BevyError yet,
+            // we need to manually move this to `debug` on the error handler.
+            // Which I leave as an exercise for the reader.
+            // Until then, this erroneously returns `Ok()` :)
+            debug!("Availability check failed for operator: {id}");
+            return Ok(OperatorResult::Cancelled);
         }
     }
 
@@ -432,6 +436,7 @@ fn dispatch_operator(
         ExecutionContext::Execute => op.execute,
         ExecutionContext::Invoke => op.invoke,
     };
+    info!("OPERATOR: {id}");
     let result = world.run_system_with(system, params);
 
     let result = result.map_err(|_| CallOperatorError::ExecuteFailed)?;
@@ -443,7 +448,9 @@ fn dispatch_operator(
         }
         OperatorResult::Running => {}
         OperatorResult::Finished => {
-            if let Err(err) = world.run_system_cached_with(finalize, (op.label, before_snapshot)) {
+            if let Err(err) =
+                world.run_system_cached_with(save_history, (op.label, before_snapshot))
+            {
                 error!("Failed to finalize modal operator {}: {err:?}", op.label);
             }
         }
@@ -462,7 +469,7 @@ fn dispatch_operator(
 
 /// Capture the current state, diff against `before`, and push a
 /// `SnapshotDiff` onto [`CommandHistory`] if the scene changed.
-fn finalize(
+fn save_history(
     In((label, before)): In<(&'static str, Option<Box<dyn SceneSnapshot>>)>,
     world: &mut World,
 ) {
@@ -501,11 +508,8 @@ impl EditorCommand for SnapshotDiff {
 /// Tick system added to Update by `ExtensionLoaderPlugin`. Re-runs the
 /// active modal operator's invoke system each frame; exits modal on
 /// `Finished` (committing) or `Cancelled` (discarding).
-pub(crate) fn tick_modal_operator(
-    world: &mut World,
-    active: &mut SystemState<Option<Single<&OperatorEntity, With<ActiveModalOperator>>>>,
-) {
-    let Some(op) = active.get(world).map(|op| op.clone()) else {
+pub(crate) fn tick_modal_operator(world: &mut World, active: &mut SystemState<ActiveModalQuery>) {
+    let Some(op) = active.get(world).get_operator().cloned() else {
         return;
     };
     let result = match world.run_system_with(op.invoke, default()) {
@@ -553,6 +557,7 @@ pub(crate) fn cancel_operator(
     In(id): In<Cow<'static, str>>,
     world: &mut World,
     ops: &mut QueryState<&OperatorEntity>,
+    active: &mut SystemState<ActiveModalQuery>,
 ) -> Result {
     let Some(op) = ops.iter(world).find(|o| o.id == id).cloned() else {
         warn!("Tried to cancel non-existent operator: {id}");
@@ -567,9 +572,11 @@ pub(crate) fn cancel_operator(
         }
     }
     let mut finalize_err = None;
-    if let Err(err) = world.run_system_cached_with(finalize_modal, false) {
-        error!("Failed to finalize modal operator: {err:?}");
-        finalize_err = Some(err);
+    if active.get(world).is_operator(id) {
+        if let Err(err) = world.run_system_cached_with(finalize_modal, false) {
+            error!("Failed to finalize modal operator: {err:?}");
+            finalize_err = Some(err);
+        }
     }
     match (cancel_err, finalize_err) {
         (Some(cancel_err), Some(_finalize_err)) => {
@@ -602,7 +609,9 @@ fn finalize_modal(
     if !commit {
         return;
     }
-    if let Err(err) = world.run_system_cached_with(finalize, (op.label, snapshot.before_snapshot)) {
+    if let Err(err) =
+        world.run_system_cached_with(save_history, (op.label, snapshot.before_snapshot))
+    {
         error!("Failed to finalize modal operator {}: {err:?}", op.label);
     }
 }
