@@ -20,15 +20,15 @@ use syn::{
 /// Optional keys:
 /// - `description`: long-form description (default `""`)
 /// - `modal`: `bool`, default `false`
-/// - `allows_undo`: `bool`, default `true`. When `false`, this operator will never
-///    create an undo history entry.
+/// - `allows_undo`: `bool`, default `true`. When `false`, this operator never
+///   creates an undo history entry.
 /// - `is_available`: path to a Bevy system returning `bool` that
 ///   decides whether the operator can run in the current editor
-///   state. Runs before the execute system on every
-///   `World::operator` and via `World::is_operator_available`.
-///    If that system returns `false`, the operator returns an error without executing.
-/// - `cancel`: path to a Bevy system that is invoked when the
-///    operator is cancelled.
+///   state. Runs before the execute system on every `World::operator`
+///   call and via `World::is_operator_available`. If it returns
+///   `false`, the operator returns an error without executing.
+/// - `cancel`: path to a Bevy system invoked when the operator is
+///   cancelled.
 /// - `name`: override the generated struct name. Default is
 ///   `PascalCase(fn_name) + "Op"`.
 ///

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use jackdaw_api::prelude::*;
+use jackdaw_api_internal::lifecycle::ExtensionAppExt as _;
 
 use crate::util::OperatorResultExt as _;
 mod util;

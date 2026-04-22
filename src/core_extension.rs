@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::{Press, *};
 use jackdaw_api::prelude::*;
+use jackdaw_api_internal::lifecycle::ExtensionAppExt as _;
 
 pub(super) fn plugin(app: &mut App) {
     app.register_extension::<JackdawCoreExtension>();

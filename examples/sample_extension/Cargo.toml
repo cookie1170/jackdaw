@@ -5,6 +5,11 @@ edition = "2024"
 
 [lib]
 path = "src/lib.rs"
+# Dual crate-type: `rlib` keeps the crate linkable into the
+# prebuilt binary under the `dev` feature; `cdylib` produces the
+# `libsample_extension.so` that the dylib loader picks up. Cargo
+# builds both artifacts on every workspace build.
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 bevy.workspace = true

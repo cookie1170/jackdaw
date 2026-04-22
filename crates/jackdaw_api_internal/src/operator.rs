@@ -22,7 +22,7 @@ pub(super) fn plugin(app: &mut App) {
 /// can be used as a BEI action.
 /// Usually you will want to use [`operator`](crate::prelude::operator) to define your operator, but it can be manually implemented if needed:
 ///
-/// ```rust
+/// ```ignore
 /// use bevy_enhanced_input::prelude::*;
 /// use jackdaw_api::prelude::*;
 /// use bevy::prelude::*;
@@ -132,7 +132,7 @@ impl OperatorResult {
 ///
 /// Usage:
 ///
-/// ```
+/// ```ignore
 /// use jackdaw_api::prelude::*;
 /// use bevy::prelude::*;
 ///

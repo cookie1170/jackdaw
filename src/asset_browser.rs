@@ -10,8 +10,8 @@ use bevy::{
     ui_widgets::observe,
     window::{PrimaryWindow, RawHandleWrapper},
 };
-use jackdaw_feathers::tooltip::ActiveTooltip;
 use jackdaw_feathers::text_edit::TextEditValue;
+use jackdaw_feathers::tooltip::ActiveTooltip;
 use jackdaw_feathers::{file_browser, icons, icons::IconFont, popover, tokens};
 use jackdaw_widgets::file_browser::{FileBrowserItem, FileItemDoubleClicked};
 use rfd::AsyncFileDialog;

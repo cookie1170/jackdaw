@@ -21,7 +21,7 @@ pub fn headless_app() -> App {
             })
             .disable::<WinitPlugin>(),
     )
-    .add_plugins(EditorPlugin);
+    .add_plugins(EditorPlugin::new().build());
     app
 }
 

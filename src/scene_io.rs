@@ -1170,6 +1170,14 @@ fn build_scene_snapshot(
         .collect()
 }
 
+/// Public entry point for "load this specific `.jsn` file into the
+/// World". Called by the file-picker dialog (see
+/// `poll_scene_dialog`) and by `project_select`'s auto-load at
+/// project-open time.
+pub fn load_scene_from_file(world: &mut World, chosen: &std::path::Path) {
+    finish_load_scene(world, chosen)
+}
+
 fn finish_load_scene(world: &mut World, chosen: &std::path::Path) {
     let path = chosen.to_string_lossy().to_string();
     let last_dir = chosen.parent().map(|p| p.to_path_buf());

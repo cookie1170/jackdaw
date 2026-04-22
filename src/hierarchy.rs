@@ -76,6 +76,7 @@ impl Plugin for HierarchyPlugin {
                     update_show_all_button_appearance,
                     on_show_all_changed,
                     jackdaw_feathers::tree_view::tree_keyboard_navigation,
+                    style_game_spawned_rows,
                 )
                     .run_if(in_state(crate::AppState::Editor)),
             )
@@ -790,7 +791,7 @@ fn handle_hierarchy_right_click(
     tree_row_contents: Query<(Entity, &ChildOf), With<TreeRowContent>>,
     tree_nodes: Query<&TreeNode>,
     computed_nodes: Query<(&ComputedNode, &UiGlobalTransform), With<TreeRowContent>>,
-    extension_add_entries: Query<&jackdaw_api::prelude::RegisteredMenuEntry>,
+    extension_add_entries: Query<&jackdaw_api_internal::lifecycle::RegisteredMenuEntry>,
 ) {
     if !mouse.just_pressed(MouseButton::Right) {
         return;
@@ -1025,7 +1026,7 @@ fn on_context_menu_action(
                 world
                     .operator(operator_id)
                     .settings(CallOperatorSettings {
-                        execution_context: jackdaw_api::prelude::ExecutionContext::Invoke,
+                        execution_context: ExecutionContext::Invoke,
                         creates_history_entry: true,
                     })
                     .call()
@@ -1379,6 +1380,58 @@ fn toggle_show_all_button(
     for interaction in &interactions {
         if *interaction == Interaction::Pressed {
             show_all.0 = !show_all.0;
+        }
+    }
+}
+
+/// Style hierarchy rows whose source entity was spawned during
+/// `PlayState::Playing` (i.e. has the `GameSpawned` marker) in
+/// italic, so the user can tell at a glance which rows are
+/// authored vs transient runtime state that'll disappear on Stop.
+///
+/// Uses the `EditorFontItalic` handle loaded by
+/// `jackdaw_feathers::icons`. Text colour stays at the theme's
+/// primary foreground; only the font handle changes. Runs every
+/// frame while in `Editor` state; the body is a few pointer-chasing
+/// lookups per game-spawned entity — cheap enough to skip change
+/// detection. We only write when the font differs to keep bevy's
+/// `Changed<TextFont>` quiet for downstream consumers.
+fn style_game_spawned_rows(
+    game_spawned: Query<Entity, With<crate::pie::GameSpawned>>,
+    index: Res<jackdaw_widgets::tree_view::TreeIndex>,
+    italic_font: Option<Res<jackdaw_feathers::icons::EditorFontItalic>>,
+    children_q: Query<&Children>,
+    row_content_q: Query<(), With<jackdaw_widgets::tree_view::TreeRowContent>>,
+    label_q: Query<(), With<jackdaw_widgets::tree_view::TreeRowLabel>>,
+    mut text_fonts: Query<&mut TextFont>,
+) {
+    let Some(italic_font) = italic_font else {
+        return;
+    };
+    for source in &game_spawned {
+        let Some(row_entity) = index.get(source) else {
+            continue;
+        };
+        let Ok(row_children) = children_q.get(row_entity) else {
+            continue;
+        };
+        for content in row_children.iter() {
+            if !row_content_q.contains(content) {
+                continue;
+            }
+            let Ok(content_children) = children_q.get(content) else {
+                continue;
+            };
+            for maybe_label in content_children.iter() {
+                if !label_q.contains(maybe_label) {
+                    continue;
+                }
+                if let Ok(mut tf) = text_fonts.get_mut(maybe_label) {
+                    if tf.font != italic_font.0 {
+                        tf.font = italic_font.0.clone();
+                    }
+                }
+            }
         }
     }
 }

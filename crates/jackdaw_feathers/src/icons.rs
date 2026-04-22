@@ -9,9 +9,16 @@ pub struct IconFont(pub Handle<Font>);
 #[derive(Resource)]
 pub struct EditorFont(pub Handle<Font>);
 
+/// Italic variant of the editor body font. Used by surfaces that
+/// want to mark content as "transient" or "runtime" — today the
+/// hierarchy italicises rows for entities spawned during PIE Play.
+#[derive(Resource)]
+pub struct EditorFontItalic(pub Handle<Font>);
+
 pub struct IconFontPlugin;
 
 const FIRA_SANS_BYTES: &[u8] = include_bytes!("../fonts/FiraSans-Regular.ttf");
+const FIRA_SANS_ITALIC_BYTES: &[u8] = include_bytes!("../fonts/FiraSans-Italic.ttf");
 
 impl Plugin for IconFontPlugin {
     fn build(&self, app: &mut App) {
@@ -27,6 +34,10 @@ impl Plugin for IconFontPlugin {
             Font::try_from_bytes(FIRA_SANS_BYTES.to_vec()).expect("Failed to load FiraSans font");
         let editor_font_handle = fonts.add(editor_font.clone());
 
+        let editor_font_italic = Font::try_from_bytes(FIRA_SANS_ITALIC_BYTES.to_vec())
+            .expect("Failed to load FiraSans Italic font");
+        let editor_font_italic_handle = fonts.add(editor_font_italic);
+
         // Also override Bevy's default font (AssetId::default()) so that ALL Text nodes
         // that don't specify an explicit font handle use FiraSans instead of FiraMono.
         // This ensures ThemedText and any other Text without `font:` use our editor font.
@@ -34,6 +45,7 @@ impl Plugin for IconFontPlugin {
 
         app.insert_resource(IconFont(icon_handle));
         app.insert_resource(EditorFont(editor_font_handle));
+        app.insert_resource(EditorFontItalic(editor_font_italic_handle));
     }
 }
 

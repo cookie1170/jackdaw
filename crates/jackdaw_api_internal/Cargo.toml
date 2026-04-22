@@ -1,0 +1,18 @@
+[package]
+name = "jackdaw_api_internal"
+version = "0.4.0"
+edition = "2024"
+description = "Internal implementation crate for jackdaw_api. Depend on jackdaw_api instead."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jbuehler23/jackdaw"
+
+[dependencies]
+bevy.workspace = true
+bevy_enhanced_input.workspace = true
+jackdaw_panels.workspace = true
+jackdaw_commands.workspace = true
+jackdaw_api_macros.workspace = true
+jackdaw_jsn.workspace = true
+
+[lints]
+workspace = true

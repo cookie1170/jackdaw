@@ -15,6 +15,7 @@ pub mod menu_bar;
 pub mod panel_header;
 pub mod panel_section;
 pub mod popover;
+pub mod progress;
 pub mod scroll;
 pub mod separator;
 pub mod split_panel;

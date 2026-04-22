@@ -1,135 +1,49 @@
 {
   "jsn": {
     "format_version": [
-      2,
+      3,
       0,
       0
     ],
-    "editor_version": "0.1.5",
+    "editor_version": "0.4.0",
     "bevy_version": "0.18"
   },
   "metadata": {
     "name": "Untitled",
     "description": "",
     "author": "",
-    "created": "2026-03-12T09:53:47Z",
-    "modified": "2026-03-12T09:53:47Z"
+    "created": "2026-04-20T15:08:53Z",
+    "modified": "2026-04-20T15:08:53Z"
   },
-  "assets": {
-    "bevy_image::image::Image": {
-      "#Image0": "environment_maps/Rock058_2K-PNG/Rock058_2K-PNG_Color.png",
-      "#Image1": "environment_maps/Rock058_2K-PNG/Rock058_2K-PNG_Roughness.png",
-      "#Image2": "environment_maps/Rock058_2K-PNG/Rock058_2K-PNG_NormalGL.png",
-      "#Image3": "environment_maps/Rock058_2K-PNG/Rock058_2K-PNG_AmbientOcclusion.png"
-    },
-    "bevy_pbr::pbr_material::StandardMaterial": {
-      "#StandardMaterial0": {
-        "alpha_mode": "Opaque",
-        "anisotropy_rotation": 0.0,
-        "anisotropy_strength": 0.0,
-        "attenuation_color": {
-          "LinearRgba": {
-            "alpha": 1.0,
-            "blue": 1.0,
-            "green": 1.0,
-            "red": 1.0
-          }
-        },
-        "attenuation_distance": "inf",
-        "base_color": {
-          "LinearRgba": {
-            "alpha": 1.0,
-            "blue": 1.0,
-            "green": 1.0,
-            "red": 1.0
-          }
-        },
-        "base_color_channel": "Uv0",
-        "base_color_texture": "#Image0",
-        "clearcoat": 0.0,
-        "clearcoat_perceptual_roughness": 0.5,
-        "deferred_lighting_pass_id": 1,
-        "depth_bias": 0.0,
-        "depth_map": null,
-        "diffuse_transmission": 0.0,
-        "double_sided": false,
-        "emissive": {
-          "alpha": 1.0,
-          "blue": 0.0,
-          "green": 0.0,
-          "red": 0.0
-        },
-        "emissive_channel": "Uv0",
-        "emissive_exposure_weight": 0.0,
-        "emissive_texture": null,
-        "flip_normal_map_y": false,
-        "fog_enabled": true,
-        "ior": 1.5,
-        "lightmap_exposure": 1.0,
-        "max_parallax_layer_count": 16.0,
-        "metallic": 0.0,
-        "metallic_roughness_channel": "Uv0",
-        "metallic_roughness_texture": "#Image1",
-        "normal_map_channel": "Uv0",
-        "normal_map_texture": "#Image2",
-        "occlusion_channel": "Uv0",
-        "occlusion_texture": "#Image3",
-        "opaque_render_method": "Auto",
-        "parallax_depth_scale": 0.10000000149011612,
-        "parallax_mapping_method": "Occlusion",
-        "perceptual_roughness": 0.5,
-        "reflectance": 0.5,
-        "specular_tint": {
-          "LinearRgba": {
-            "alpha": 1.0,
-            "blue": 1.0,
-            "green": 1.0,
-            "red": 1.0
-          }
-        },
-        "specular_transmission": 0.0,
-        "thickness": 0.0,
-        "unlit": false,
-        "uv_transform": [
-          1.0,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.0
-        ]
-      }
-    }
-  },
+  "assets": {},
   "editor": null,
   "scene": [
     {
-      "name": "Brush",
-      "transform": {
-        "translation": [
-          -2.25,
-          2.125,
-          -4.5
-        ],
-        "rotation": [
-          0.0,
-          0.0,
-          0.0,
-          1.0
-        ],
-        "scale": [
-          1.0,
-          1.0,
-          1.0
-        ]
-      },
       "components": {
+        "bevy_transform::components::transform::Transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.125,
+            0.875,
+            0.75
+          ]
+        },
         "jackdaw_jsn::types::Brush": {
           "faces": [
             {
-              "material": "#StandardMaterial0",
+              "material": null,
               "plane": {
-                "distance": 3.25,
+                "distance": 1.375,
                 "normal": [
                   1.0,
                   0.0,
@@ -144,12 +58,22 @@
               "uv_scale": [
                 1.0,
                 1.0
+              ],
+              "uv_u_axis": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "uv_v_axis": [
+                0.0,
+                -1.0,
+                0.0
               ]
             },
             {
-              "material": "#StandardMaterial0",
+              "material": null,
               "plane": {
-                "distance": 3.25,
+                "distance": 1.375,
                 "normal": [
                   -1.0,
                   0.0,
@@ -164,12 +88,22 @@
               "uv_scale": [
                 1.0,
                 1.0
+              ],
+              "uv_u_axis": [
+                0.0,
+                0.0,
+                -1.0
+              ],
+              "uv_v_axis": [
+                -0.0,
+                -1.0,
+                -0.0
               ]
             },
             {
-              "material": "#StandardMaterial0",
+              "material": null,
               "plane": {
-                "distance": 2.125,
+                "distance": 0.875,
                 "normal": [
                   0.0,
                   1.0,
@@ -184,12 +118,22 @@
               "uv_scale": [
                 1.0,
                 1.0
+              ],
+              "uv_u_axis": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "uv_v_axis": [
+                0.0,
+                0.0,
+                -1.0
               ]
             },
             {
-              "material": "#StandardMaterial0",
+              "material": null,
               "plane": {
-                "distance": 2.125,
+                "distance": 0.875,
                 "normal": [
                   0.0,
                   -1.0,
@@ -204,12 +148,22 @@
               "uv_scale": [
                 1.0,
                 1.0
+              ],
+              "uv_u_axis": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "uv_v_axis": [
+                -0.0,
+                -0.0,
+                -1.0
               ]
             },
             {
-              "material": "#StandardMaterial0",
+              "material": null,
               "plane": {
-                "distance": 6.25,
+                "distance": 1.75,
                 "normal": [
                   0.0,
                   0.0,
@@ -224,12 +178,22 @@
               "uv_scale": [
                 1.0,
                 1.0
+              ],
+              "uv_u_axis": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "uv_v_axis": [
+                0.0,
+                -1.0,
+                0.0
               ]
             },
             {
-              "material": "#StandardMaterial0",
+              "material": null,
               "plane": {
-                "distance": 6.25,
+                "distance": 1.75,
                 "normal": [
                   0.0,
                   0.0,
@@ -244,8 +208,69 @@
               "uv_scale": [
                 1.0,
                 1.0
+              ],
+              "uv_u_axis": [
+                1.0,
+                -0.0,
+                0.0
+              ],
+              "uv_v_axis": [
+                0.0,
+                -1.0,
+                -0.0
               ]
             }
+          ]
+        },
+        "bevy_ecs::name::Name": "Brush",
+        "bevy_camera::visibility::Visibility": "Inherited"
+      }
+    },
+    {
+      "components": {
+        "bevy_camera::visibility::Visibility": "Inherited",
+        "bevy_light::cascade::CascadeShadowConfig": {
+          "bounds": [
+            10.0,
+            24.662120819091797,
+            60.822021484375,
+            149.99998474121094
+          ],
+          "minimum_distance": 0.10000000149011612,
+          "overlap_proportion": 0.20000000298023224
+        },
+        "bevy_ecs::name::Name": "Sun",
+        "bevy_light::directional_light::DirectionalLight": {
+          "affects_lightmapped_mesh_diffuse": true,
+          "color": {
+            "LinearRgba": {
+              "alpha": 1.0,
+              "blue": 1.0,
+              "green": 1.0,
+              "red": 1.0
+            }
+          },
+          "illuminance": 10000.0,
+          "shadow_depth_bias": 0.019999999552965164,
+          "shadow_normal_bias": 1.7999999523162842,
+          "shadows_enabled": true
+        },
+        "bevy_transform::components::transform::Transform": {
+          "rotation": [
+            -0.38165590167045593,
+            0.1829865723848343,
+            -0.07736548036336899,
+            0.9027010798454285
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            10.0,
+            20.0,
+            10.0
           ]
         }
       }
