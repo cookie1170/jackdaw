@@ -122,6 +122,14 @@ fn populate_extensions_dialog(
     let mut builtin_rows: Vec<(String, bool)> = Vec::new();
     let mut custom_rows: Vec<(String, bool)> = Vec::new();
     for (name, kind) in catalog.iter_with_kind() {
+        // Required extensions are load-bearing (the editor panics
+        // without them), so they're not user-toggleable. Omit them
+        // from the dialog entirely rather than rendering a locked
+        // checkbox — they're implementation detail, not a user
+        // choice.
+        if extensions_config::is_required(name) {
+            continue;
+        }
         let row = (name.to_string(), enabled_names.contains(name));
         match kind {
             ExtensionKind::Builtin => builtin_rows.push(row),
@@ -276,6 +284,15 @@ fn on_extension_checkbox_commit(
     };
     let name = cb.extension_name.clone();
     let checked = event.checked;
+
+    // Belt-and-suspenders: required extensions shouldn't have a
+    // checkbox in the first place (see `populate_extensions_dialog`),
+    // but if one slipped through we refuse to disable it rather than
+    // letting the editor end up in a broken state.
+    if !checked && extensions_config::is_required(&name) {
+        warn!("Refusing to disable required extension `{name}`");
+        return;
+    }
 
     commands.queue(move |world: &mut World| {
         if checked {

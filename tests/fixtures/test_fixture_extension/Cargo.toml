@@ -5,10 +5,11 @@ edition = "2024"
 publish = false
 
 [lib]
-# cdylib only: this crate exists solely so the integration tests in
-# `tests/dylib_loading.rs` can dlopen a real jackdaw extension
-# through `jackdaw_loader::load_from_path`.
-crate-type = ["cdylib"]
+# `rlib` lets cargo pull this in as a dev-dep of the root `jackdaw`
+# crate (which forces the cdylib to be built during normal test
+# compilation — no runtime shell-out needed). `cdylib` is what
+# `jackdaw_loader::load_from_path` dlopens.
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 bevy.workspace = true

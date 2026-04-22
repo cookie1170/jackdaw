@@ -10,6 +10,21 @@ use jackdaw_api::prelude::ExtensionKind;
 use jackdaw_api_internal::lifecycle::ExtensionCatalog;
 use serde::{Deserialize, Serialize};
 
+/// Extensions that must always be loaded — the editor panics without
+/// the resources they install. Anything listed here is force-enabled
+/// in [`resolve_enabled_list`] regardless of what's persisted on
+/// disk, so a stale config (e.g. one written before the extension
+/// was extracted) can't take the editor down. The Extensions dialog
+/// should also hide or lock these so users can't try to turn them
+/// off.
+pub const REQUIRED_EXTENSIONS: &[&str] = &[crate::core_extension::CORE_EXTENSION_NAME];
+
+/// True if the named extension is load-bearing and must not be
+/// user-toggleable.
+pub fn is_required(name: &str) -> bool {
+    REQUIRED_EXTENSIONS.iter().any(|n| *n == name)
+}
+
 /// On-disk shape.
 #[derive(Serialize, Deserialize, Default)]
 pub struct ExtensionsConfig {
@@ -60,20 +75,37 @@ pub fn resolve_enabled_list(world: &World) -> Vec<String> {
         .map(|(name, _)| name.to_string())
         .collect();
 
-    match read_enabled_list() {
+    let mut resolved = match read_enabled_list() {
         Some(list) => {
             let on_disk: HashSet<String> = list.into_iter().collect();
             let has_any_builtin = builtins.iter().any(|name| on_disk.contains(name));
             if !has_any_builtin {
-                return available;
+                available.clone()
+            } else {
+                available
+                    .iter()
+                    .filter(|n| on_disk.contains(*n))
+                    .cloned()
+                    .collect()
             }
-            available
-                .into_iter()
-                .filter(|n| on_disk.contains(n))
-                .collect()
         }
-        None => available,
+        None => available.clone(),
+    };
+
+    // Force-include any REQUIRED extension the catalog knows about
+    // but the resolved list dropped (e.g. because the persisted
+    // config predates it). Without this, upgrading into a build that
+    // extracted a resource into a new required extension panics on
+    // first launch.
+    for required in REQUIRED_EXTENSIONS {
+        let in_catalog = available.iter().any(|n| n == required);
+        let already_listed = resolved.iter().any(|n| n == required);
+        if in_catalog && !already_listed {
+            resolved.push((*required).to_string());
+        }
     }
+
+    resolved
 }
 
 /// Compute the current enabled list from the loaded `Extension` entities

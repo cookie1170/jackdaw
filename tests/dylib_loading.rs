@@ -26,24 +26,14 @@ use jackdaw_loader::{
 
 mod util;
 
-/// Build the fixture cdylib in the profile the test binary is
-/// running under, then return the path to the produced library.
+/// Resolve the path to the fixture cdylib produced by cargo as part
+/// of the workspace test-target build.
 ///
-/// Shelled out to cargo on purpose: `cargo nextest run --tests`
-/// only builds integration-test targets, not arbitrary workspace
-/// members, so we trigger the fixture build ourselves. First call
-/// in a clean `target/` is slow; subsequent calls are a no-op
-/// inside cargo.
-fn build_fixture() -> PathBuf {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let mut cmd = std::process::Command::new(&cargo);
-    cmd.args(["build", "-p", "test_fixture_extension", "--lib"]);
-    if !cfg!(debug_assertions) {
-        cmd.arg("--release");
-    }
-    let status = cmd.status().expect("spawn cargo build");
-    assert!(status.success(), "cargo build of test fixture failed");
-
+/// `test_fixture_extension` is a `dev-dependency` of the root
+/// `jackdaw` crate (see `Cargo.toml`), so cargo compiles its cdylib
+/// before any test binary runs. No shell-out needed — just read the
+/// artifact at its known path.
+fn fixture_path() -> PathBuf {
     let target_root = std::env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target"));
@@ -60,7 +50,9 @@ fn build_fixture() -> PathBuf {
     let path = target_root.join(profile_dir).join(filename);
     assert!(
         path.exists(),
-        "fixture artifact missing at {}",
+        "fixture artifact missing at {} — cargo should have built it via the \
+         dev-dependency; if running a trimmed test harness, `cargo build -p \
+         test_fixture_extension --lib` first",
         path.display()
     );
     path
@@ -92,7 +84,7 @@ fn forget_app(app: App) {
 
 #[test]
 fn peek_kind_classifies_extension() {
-    let path = build_fixture();
+    let path = fixture_path();
     let kind = peek_kind(&path).expect("peek_kind should succeed on a valid fixture");
     match kind {
         LoadedKind::Extension(name) => assert_eq!(name, "test_fixture"),
@@ -102,7 +94,7 @@ fn peek_kind_classifies_extension() {
 
 #[test]
 fn load_from_path_registers_extension() {
-    let path = build_fixture();
+    let path = fixture_path();
     let mut app = headless_app_with_empty_dylib_loader();
     app.finish();
     app.update();
@@ -124,7 +116,7 @@ fn load_from_path_registers_extension() {
 
 #[test]
 fn repeat_load_is_idempotent() {
-    let path = build_fixture();
+    let path = fixture_path();
     let mut app = headless_app_with_empty_dylib_loader();
     app.finish();
     app.update();

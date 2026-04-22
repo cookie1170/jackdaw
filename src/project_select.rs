@@ -580,6 +580,20 @@ pub fn enter_project_with(world: &mut World, root: PathBuf, skip_build: bool) {
         transition_to_editor(world, root);
         return;
     }
+    // If the Cargo.toml is a plain binary crate (e.g., the editor's
+    // own source tree, or any non-extension cargo project the user
+    // points at) there's no cdylib for the loader to pick up. Skip
+    // the build rather than compile the whole dep graph just to fail
+    // the artifact check at the end.
+    if !crate::ext_build::manifest_declares_cdylib(&root) {
+        info!(
+            "Project at {} has a Cargo.toml but no cdylib target — \
+             opening without building.",
+            root.display()
+        );
+        transition_to_editor(world, root);
+        return;
+    }
 
     let project_name = root
         .file_name()

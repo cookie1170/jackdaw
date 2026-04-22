@@ -414,6 +414,34 @@ fn package_name_from_manifest(project_dir: &Path) -> String {
         .unwrap_or_else(|| "unnamed".to_string())
 }
 
+/// Quick scan of a project's `Cargo.toml` to decide whether
+/// `cargo build` would actually produce a cdylib. Used at project-
+/// open time: if the manifest is a plain binary crate (e.g., the
+/// editor's own source tree, or a user opening any non-extension
+/// cargo project) we skip the build pipeline entirely and let them
+/// in — otherwise `cargo build` compiles the whole dep tree only to
+/// fail the artifact check at the end.
+///
+/// Same line-based parsing style as [`package_name_from_manifest`]
+/// to avoid pulling in a toml dep. Handles the two shapes scaffolded
+/// projects use: `crate-type = ["cdylib"]` and
+/// `crate-type = ["rlib", "cdylib"]`.
+pub fn manifest_declares_cdylib(project_dir: &Path) -> bool {
+    let Ok(contents) = std::fs::read_to_string(project_dir.join("Cargo.toml")) else {
+        return false;
+    };
+    contents.lines().any(|line| {
+        let trimmed = line.trim();
+        let Some(rest) = trimmed.strip_prefix("crate-type") else {
+            return false;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix('=') else {
+            return false;
+        };
+        rest.contains("\"cdylib\"") || rest.contains("'cdylib'")
+    })
+}
+
 /// Derive the expected cdylib filename from the project's package
 /// name. Falls back to `libunnamed.<ext>` if the manifest doesn't
 /// declare a name (which cargo would have rejected anyway, but it

@@ -4497,6 +4497,7 @@ dependencies = [
  "sample_extension",
  "serde",
  "serde_json",
+ "test_fixture_extension",
  "viewable_camera_extension",
 ]
 

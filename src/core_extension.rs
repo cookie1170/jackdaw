@@ -3,6 +3,12 @@ use bevy_enhanced_input::prelude::{Press, *};
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::lifecycle::ExtensionAppExt as _;
 
+/// Catalog name of the Core extension. Exported so
+/// [`crate::extensions_config::REQUIRED_EXTENSIONS`] and the
+/// Extensions dialog can refer to it without duplicating the
+/// literal string.
+pub const CORE_EXTENSION_NAME: &str = "jackdaw_core";
+
 pub(super) fn plugin(app: &mut App) {
     app.register_extension::<JackdawCoreExtension>();
 }
@@ -12,7 +18,7 @@ pub struct JackdawCoreExtension;
 
 impl JackdawExtension for JackdawCoreExtension {
     fn name() -> String {
-        "Jackdaw Core Extension".to_string()
+        CORE_EXTENSION_NAME.to_string()
     }
     fn kind() -> ExtensionKind {
         ExtensionKind::Builtin
