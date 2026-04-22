@@ -5,7 +5,7 @@
 use std::any::Any;
 
 use bevy::prelude::*;
-use jackdaw_api::prelude::*;
+use jackdaw_api_internal::snapshot::{ActiveSnapshotter, SceneSnapshot, SceneSnapshotter};
 use jackdaw_jsn::SceneJsnAst;
 
 pub(super) fn plugin(app: &mut App) {

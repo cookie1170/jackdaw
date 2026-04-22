@@ -5,7 +5,8 @@ use bevy::{
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };
-use jackdaw_api::prelude::{Extension, ExtensionCatalog, ExtensionKind};
+use jackdaw_api::prelude::ExtensionKind;
+use jackdaw_api_internal::lifecycle::{Extension, ExtensionCatalog};
 use jackdaw_feathers::{
     button::{ButtonClickEvent, ButtonProps, ButtonSize, ButtonVariant, button},
     checkbox::{CheckboxCommitEvent, CheckboxProps, checkbox},
@@ -16,7 +17,7 @@ use jackdaw_feathers::{
 use rfd::{AsyncFileDialog, FileHandle};
 
 use crate::extensions_config;
-use jackdaw_api::lifecycle::{disable_extension, enable_extension};
+use jackdaw_api_internal::lifecycle::{disable_extension, enable_extension};
 
 pub struct ExtensionsDialogPlugin;
 

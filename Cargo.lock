@@ -4475,6 +4475,7 @@ dependencies = [
  "ehttp",
  "jackdaw_animation",
  "jackdaw_api",
+ "jackdaw_api_internal",
  "jackdaw_avian_integration",
  "jackdaw_camera",
  "jackdaw_commands",

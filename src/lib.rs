@@ -64,6 +64,7 @@ use bevy::{
     prelude::*,
 };
 use jackdaw_api::prelude::*;
+use jackdaw_api_internal::lifecycle::{RegisteredMenuEntry, RegisteredWindow};
 use jackdaw_feathers::dialog::EditorDialog;
 use jackdaw_feathers::{EditorFeathersPlugin, tooltip::Tooltip};
 use jackdaw_widgets::menu_bar::MenuAction;
@@ -155,8 +156,7 @@ pub struct NonSerializable;
 ///     .run();
 /// ```
 pub struct EditorPlugin {
-    extensions:
-        Vec<std::sync::Arc<dyn Fn() -> Box<dyn jackdaw_api::JackdawExtension> + Send + Sync>>,
+    extensions: Vec<std::sync::Arc<dyn Fn() -> Box<dyn JackdawExtension> + Send + Sync>>,
     register_builtins: bool,
     dylib_loader: Option<DylibLoaderConfig>,
 }
@@ -190,7 +190,7 @@ impl EditorPlugin {
     /// pre-1.0 API and is ignored.
     pub fn with_extension<F>(mut self, _name: impl Into<String>, ctor: F) -> Self
     where
-        F: Fn() -> Box<dyn jackdaw_api::JackdawExtension> + Send + Sync + 'static,
+        F: Fn() -> Box<dyn JackdawExtension> + Send + Sync + 'static,
     {
         self.extensions.push(std::sync::Arc::new(ctor));
         self
@@ -320,7 +320,7 @@ impl Plugin for EditorPlugin {
             .add_plugins(jackdaw_node_graph::NodeGraphPlugin)
             .add_plugins(jackdaw_animation::AnimationPlugin)
             .add_plugins(jackdaw_panels::DockPlugin)
-            .add_plugins(jackdaw_api::ExtensionLoaderPlugin)
+            .add_plugins(jackdaw_api_internal::ExtensionLoaderPlugin)
             .add_plugins(extension_watcher::ExtensionWatcherPlugin)
             .add_plugins(extensions_dialog::ExtensionsDialogPlugin)
             .add_plugins(hot_reload::HotReloadPlugin)
@@ -405,7 +405,7 @@ impl Plugin for EditorPlugin {
         if self.register_builtins {
             register_builtins(app);
         }
-        use jackdaw_api::lifecycle::ExtensionAppExt as _;
+        use jackdaw_api_internal::lifecycle::ExtensionAppExt as _;
         for ctor in &self.extensions {
             let ctor = std::sync::Arc::clone(ctor);
             app.register_extension_dynamic(move || (*ctor)());
@@ -425,7 +425,7 @@ impl Plugin for EditorPlugin {
 /// Register the built-in feature-area extensions. Called by
 /// [`EditorPlugin::build`] when `register_builtins` is `true`.
 fn register_builtins(app: &mut App) {
-    use jackdaw_api::lifecycle::ExtensionAppExt as _;
+    use jackdaw_api_internal::lifecycle::ExtensionAppExt as _;
     app.add_plugins(core_extension::plugin)
         .register_extension::<builtin_extensions::CoreWindowsExtension>()
         .register_extension::<builtin_extensions::AssetBrowserExtension>()

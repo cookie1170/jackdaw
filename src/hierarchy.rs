@@ -791,7 +791,7 @@ fn handle_hierarchy_right_click(
     tree_row_contents: Query<(Entity, &ChildOf), With<TreeRowContent>>,
     tree_nodes: Query<&TreeNode>,
     computed_nodes: Query<(&ComputedNode, &UiGlobalTransform), With<TreeRowContent>>,
-    extension_add_entries: Query<&jackdaw_api::prelude::RegisteredMenuEntry>,
+    extension_add_entries: Query<&jackdaw_api_internal::lifecycle::RegisteredMenuEntry>,
 ) {
     if !mouse.just_pressed(MouseButton::Right) {
         return;
@@ -1026,7 +1026,7 @@ fn on_context_menu_action(
                 world
                     .operator(operator_id)
                     .settings(CallOperatorSettings {
-                        execution_context: jackdaw_api::prelude::ExecutionContext::Invoke,
+                        execution_context: ExecutionContext::Invoke,
                         creates_history_entry: true,
                     })
                     .call()

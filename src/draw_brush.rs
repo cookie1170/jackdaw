@@ -22,7 +22,7 @@ use bevy::{
     ui::UiGlobalTransform,
 };
 use bevy_enhanced_input::prelude::Press;
-use jackdaw_api::lifecycle::ActiveModalOperator;
+use jackdaw_api_internal::lifecycle::ActiveModalOperator;
 use jackdaw_geometry::{
     brush_planes_to_world, brushes_intersect, clean_degenerate_faces, compute_brush_geometry,
     compute_face_tangent_axes, compute_face_uvs, intersect_brushes, subtract_brush,

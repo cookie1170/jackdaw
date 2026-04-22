@@ -18,9 +18,9 @@
 //! re-exports, which ultimately point at the one compilation of
 //! bevy and jackdaw_api that was built alongside the editor.
 //!
-//! Re-exports are explicit rather than glob-based so `prelude` (and
-//! other same-named items) don't collide between bevy and
-//! jackdaw_api.
+//! Re-exports mirror `jackdaw_api`'s public surface. Editor-host
+//! plumbing (loader plugin, catalog, enable/disable helpers) lives
+//! behind `jackdaw_api_internal` and is deliberately not proxied.
 
 /// Merged prelude serving both aliased names.
 ///
@@ -40,11 +40,12 @@ pub mod prelude {
 
 pub use jackdaw_api::export_extension;
 pub use jackdaw_api::export_game;
+pub use jackdaw_api::operator;
 
 pub use jackdaw_api::{
-    DynJackdawExtension, ExtensionContext, ExtensionLoaderPlugin, ExtensionPoint, HierarchyWindow,
+    DynJackdawExtension, ExtensionContext, ExtensionKind, ExtensionPoint, HierarchyWindow,
     InspectorWindow, JackdawExtension, MenuEntryDescriptor, PanelContext, SectionBuildFn,
-    WindowDescriptor, lifecycle, macros, operator, pie, runtime, snapshot,
+    WindowDescriptor, jsn, op, pie, runtime,
 };
 
 /// Bevy root surface for extension code walking bevy paths beyond

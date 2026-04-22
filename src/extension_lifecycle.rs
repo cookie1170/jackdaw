@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use jackdaw_api::lifecycle::enable_extension;
+use jackdaw_api_internal::lifecycle::enable_extension;
 
 use crate::extensions_config::resolve_enabled_list;
 
