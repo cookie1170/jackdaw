@@ -142,6 +142,7 @@ collapsible_if = "allow"
 redundant_closure = "allow"
 
 [dev-dependencies]
+bevy = { workspace = true, features = ["dynamic_linking"] }
 jackdaw_runtime.workspace = true
 # Pulled in so cargo builds the fixture cdylib as part of the
 # workspace test-target graph. `tests/dylib_loading.rs` dlopens the
