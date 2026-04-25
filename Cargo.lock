@@ -4609,6 +4609,7 @@ name = "jackdaw_fuzzy"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "jackdaw_feathers",
  "nucleo-matcher",
 ]
 

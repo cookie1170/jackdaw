@@ -10,8 +10,8 @@
 //!
 //! let strings = vec![
 //!     String::from("Hello world"),
-//!     String::from("Hello there"),
 //!     String::from("Hi there"),
+//!     String::from("Hello there"),
 //!     String::from("Some more text"),
 //! ];
 //!
@@ -22,21 +22,21 @@
 //!
 //! // Iterates over the matches with the higher scoring ones first
 //! for matched in matcher.matches() {
-//!     let score = matched.score(); // How closely did it match?
-//!     let item = matched.item();   // The inner `FuzzyItem`, here - a `String`
+//!     let score = matched.score; // How closely did it match?
+//!     let index = matched.index; // The index of the underlying item
 //!
 //!     // A slice of `MatchedStr`s, which are the ranges of the item's text
-//!     for segment in matched.segments() {
-//!         let text = &segment.text;                    // The text of this segment
+//!     for segment in matched.segments {
+//!         let text = &segment.text;        // The text of this segment
 //!         let is_match = segment.is_match; // Should this segment of the string be higlighted (did it match the input string)?
 //!     }
 //!
-//!     matches.push((item.clone(), Vec::from(matched.segments())));
+//!     matches.push((index, Vec::from(matched.segments())));
 //! }
 //!
 //! assert_eq!(matches.len(), 2);
 //!
-//! assert_eq!(matches[0].0, "Hello world".to_string());
+//! assert_eq!(matches[0].0, 0);
 //! assert_eq!(&matches[0].1, &[
 //!     MatchedStr {
 //!         // "Hello" is a part of the input
@@ -50,7 +50,7 @@
 //!     }
 //! ]);
 //!
-//! assert_eq!(matches[1].0, "Hello there".to_string());
+//! assert_eq!(matches[1].0, 2);
 //! assert_eq!(&matches[1].1, &[
 //!     MatchedStr {
 //!         text: "Hello".to_string(),
@@ -147,12 +147,17 @@ impl<T: FuzzyItem> FuzzyMatcher<T> {
         self
     }
 
+    /// Gets a reference to the list of items
+    pub fn items(&self) -> &[T] {
+        &self.items
+    }
+
     /// Compute and iterate over all the items that the pattern matches, sorted with the highest
     /// scoring items positioned first
-    pub fn matches(&mut self) -> FuzzyMatches<'_, T> {
+    pub fn matches(&mut self) -> FuzzyMatches<'_> {
         let mut matches = Vec::with_capacity(self.items.len());
 
-        for item in &self.items {
+        for (index, item) in self.items.iter().enumerate() {
             let text = Utf32String::from(item.get_text());
             let score = self.pattern.score(text.slice(..), &mut self.matcher);
             let Some(score) = score else {
@@ -160,7 +165,7 @@ impl<T: FuzzyItem> FuzzyMatcher<T> {
                 continue;
             };
 
-            matches.push((score, text, item));
+            matches.push((score, text, index));
         }
 
         // Sort the matches in descending order
@@ -176,18 +181,18 @@ impl<T: FuzzyItem> FuzzyMatcher<T> {
 }
 
 /// An iterator of matches by a [`FuzzyMatcher`]
-pub struct FuzzyMatches<'a, T: FuzzyItem> {
+pub struct FuzzyMatches<'a> {
     index: usize,
     pattern: &'a Pattern,
     matcher: &'a mut Matcher,
-    matches: Box<[(u32, Utf32String, &'a T)]>,
+    matches: Box<[(u32, Utf32String, usize)]>,
 }
 
-impl<'a, T: FuzzyItem> Iterator for FuzzyMatches<'a, T> {
-    type Item = Match<'a, T>;
+impl<'a> Iterator for FuzzyMatches<'a> {
+    type Item = Match;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let Some((score, str, item)) = self.matches.get(self.index) else {
+        let Some((score, str, index)) = self.matches.get(self.index) else {
             return None;
         };
 
@@ -230,7 +235,7 @@ impl<'a, T: FuzzyItem> Iterator for FuzzyMatches<'a, T> {
         let item = Match {
             segments: matched_parts.into_boxed_slice(),
             score: *score,
-            item: *item,
+            index: *index,
         };
 
         Some(item)
@@ -239,27 +244,13 @@ impl<'a, T: FuzzyItem> Iterator for FuzzyMatches<'a, T> {
 
 /// A single item matched by a [`FuzzyMatcher`]
 #[derive(Debug, PartialEq, Clone)]
-pub struct Match<'a, T: FuzzyItem> {
-    segments: Box<[MatchedStr]>,
-    score: u32,
-    item: &'a T,
-}
-
-impl<'a, T: FuzzyItem> Match<'a, T> {
+pub struct Match {
+    /// The segments of the matched string, see [`MatchedStr`]
+    pub segments: Box<[MatchedStr]>,
     /// How well does the item match the input?
-    pub fn score(&self) -> u32 {
-        self.score
-    }
-
-    /// Gets a reference to the underlying item
-    pub fn item(&self) -> &T {
-        self.item
-    }
-
-    /// Gets the of the matched string, see [`MatchedStr`]
-    pub fn segments(&self) -> &[MatchedStr] {
-        &self.segments
-    }
+    pub score: u32,
+    /// The index of the underlying item
+    pub index: usize,
 }
 
 /// An invidiual segment of a [`Match`], which are intended to be used via
