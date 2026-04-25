@@ -26,6 +26,7 @@
 
 use bevy::prelude::*;
 use jackdaw_api::pie::PlayState;
+use jackdaw_api::prelude::*;
 use jackdaw_jsn::SceneJsnAst;
 
 /// Frozen AST captured when the user clicks Play from `Stopped`.
@@ -70,6 +71,63 @@ impl Plugin for PiePlugin {
     }
 }
 
+pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
+    ctx.register_operator::<PiePlayOp>()
+        .register_operator::<PiePauseOp>()
+        .register_operator::<PieStopOp>();
+}
+
+fn play_is_stopped_or_paused(state: Res<State<PlayState>>) -> bool {
+    !matches!(state.get(), PlayState::Playing)
+}
+
+fn play_is_playing(state: Res<State<PlayState>>) -> bool {
+    *state.get() == PlayState::Playing
+}
+
+fn play_is_running(state: Res<State<PlayState>>) -> bool {
+    *state.get() != PlayState::Stopped
+}
+
+/// Start the game running in the editor. From Stopped, captures a
+/// snapshot of the scene first so Stop can restore it; from Paused,
+/// resumes.
+#[operator(
+    id = "pie.play",
+    label = "Play",
+    description = "Start the game running in the editor.",
+    is_available = play_is_stopped_or_paused
+)]
+pub(crate) fn pie_play(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+    commands.queue(handle_play);
+    OperatorResult::Finished
+}
+
+/// Pause the running game.
+#[operator(
+    id = "pie.pause",
+    label = "Pause",
+    description = "Pause the running game.",
+    is_available = play_is_playing
+)]
+pub(crate) fn pie_pause(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+    commands.queue(handle_pause);
+    OperatorResult::Finished
+}
+
+/// Stop the running game and restore the scene to the state it was in
+/// before Play was pressed.
+#[operator(
+    id = "pie.stop",
+    label = "Stop",
+    description = "Stop the running game and restore the scene.",
+    is_available = play_is_running
+)]
+pub(crate) fn pie_stop(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+    commands.queue(handle_stop);
+    OperatorResult::Finished
+}
+
 /// Observer: tag entities that receive a `Transform` while
 /// `PlayState::Playing` is active with [`GameSpawned`]. Fires once
 /// per entity because `On<Add, Transform>` is a one-shot event.
@@ -89,10 +147,8 @@ fn tag_game_spawned(
     commands.entity(entity).insert(GameSpawned);
 }
 
-/// Spawn a click observer on each `PieButton` as it's added.
-///
-/// The observer captures the button kind by value so there's no
-/// need for a per-variant query at click time.
+/// Spawn a click observer on each `PieButton` as it's added. The
+/// observer dispatches the corresponding `pie.*` operator.
 fn wire_pie_button(
     trigger: On<Add, PieButton>,
     buttons: Query<&PieButton>,
@@ -102,13 +158,22 @@ fn wire_pie_button(
     let Ok(kind) = buttons.get(entity).copied() else {
         return;
     };
-    commands.entity(entity).observe(
-        move |_: On<Pointer<Click>>, mut commands: Commands| match kind {
-            PieButton::Play => commands.queue(handle_play),
-            PieButton::Pause => commands.queue(handle_pause),
-            PieButton::Stop => commands.queue(handle_stop),
-        },
-    );
+    let op_id = match kind {
+        PieButton::Play => PiePlayOp::ID,
+        PieButton::Pause => PiePauseOp::ID,
+        PieButton::Stop => PieStopOp::ID,
+    };
+    commands
+        .entity(entity)
+        .observe(move |_: On<Pointer<Click>>, mut commands: Commands| {
+            commands
+                .operator(op_id)
+                .settings(CallOperatorSettings {
+                    execution_context: ExecutionContext::Invoke,
+                    creates_history_entry: false,
+                })
+                .call();
+        });
 }
 
 /// Transition into `Playing`. If currently `Stopped`, snapshot the

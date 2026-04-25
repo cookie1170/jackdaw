@@ -1,5 +1,6 @@
 mod brp_client;
 mod build;
+pub(crate) mod ops;
 mod save_load;
 pub mod toolbar;
 mod visualization;
@@ -27,7 +28,6 @@ impl Plugin for NavmeshPlugin {
             .init_resource::<NavmeshHandleRes>()
             .init_resource::<NavmeshState>();
         app.add_plugins((
-            build::plugin,
             brp_client::plugin,
             save_load::plugin,
             toolbar::plugin,

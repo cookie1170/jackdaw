@@ -2,7 +2,24 @@ use bevy::prelude::*;
 use bevy_enhanced_input::prelude::{Press, *};
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::lifecycle::ExtensionAppExt as _;
-use jackdaw_feathers::button::{ButtonClickEvent, ButtonOperatorCall};
+use jackdaw_feathers::button::{ButtonClickEvent, ButtonOperatorCall, ButtonProps};
+
+/// Build a [`ButtonProps`] from an operator type, filling in the
+/// label and the click dispatch in one step.
+///
+/// `ButtonProps::from_operator::<MyOp>()` is the preferred form for
+/// editor toolbars and menus when the button text matches the
+/// operator's `LABEL`. For anything custom (icon-only buttons, a
+/// non-`LABEL` caption), keep using `ButtonProps::new(...).call_operator(id)`.
+pub trait ButtonPropsOpExt {
+    fn from_operator<Op: Operator>() -> Self;
+}
+
+impl ButtonPropsOpExt for ButtonProps {
+    fn from_operator<Op: Operator>() -> Self {
+        Self::new(Op::LABEL).call_operator(Op::ID)
+    }
+}
 
 /// Catalog name of the Core extension. Exported so
 /// [`crate::extension_resolution::REQUIRED_EXTENSIONS`] and the
@@ -97,6 +114,12 @@ impl JackdawExtension for JackdawCoreExtension {
         crate::brush_drag_ops::add_to_extension(ctx);
         crate::gizmos::add_to_extension(ctx);
         crate::terrain::sculpt::add_to_extension(ctx);
+        crate::navmesh::ops::add_to_extension(ctx);
+        crate::pie::add_to_extension(ctx);
+        crate::terrain::ops::add_to_extension(ctx);
+        crate::asset_browser::add_to_extension(ctx);
+        crate::material_browser::add_to_extension(ctx);
+        crate::inspector::ops::add_to_extension(ctx);
     }
 
     fn register_input_context(&self, app: &mut App) {
