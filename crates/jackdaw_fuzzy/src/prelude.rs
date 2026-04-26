@@ -1,2 +1,5 @@
-pub use crate::matcher::{FuzzyItem, MatchedStr};
-pub use crate::picker::{FuzzyPicker, PickerPlugin, RegisterFuzzyItemAppExt as _, SpawnItemInput};
+pub use crate::matcher::{FuzzyItem, Match, MatchedStr};
+pub use crate::picker::{
+    FuzzyPicker, PickerEntities, PickerInputOf, PickerListOf, PickerPlugin,
+    RegisterFuzzyItemAppExt as _, SelectInput, SpawnItemInput, WithPickerInput, WithPickerList,
+};

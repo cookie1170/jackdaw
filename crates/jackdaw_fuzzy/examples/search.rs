@@ -23,6 +23,7 @@ fn spawn_fuzzy_picker(mut commands: Commands) {
         },
     ];
 
+    // `bsn!` will make this much less painful
     let input = commands
         .spawn(text_edit(
             TextEditProps::default().with_placeholder("Search"),
@@ -44,13 +45,7 @@ fn spawn_fuzzy_picker(mut commands: Commands) {
         })
         .id();
 
-    let picker = FuzzyPicker::new(
-        input,
-        list,
-        spawn_item,
-        |_: (InRef<SearchableItem>, In<Entity>)| {},
-    )
-    .with_items(items);
+    let picker = FuzzyPicker::new(spawn_item, on_select).with_items(items);
 
     commands
         .spawn((
@@ -65,17 +60,19 @@ fn spawn_fuzzy_picker(mut commands: Commands) {
             },
             picker,
         ))
+        .add_one_related::<PickerListOf>(list)
+        .add_one_related::<PickerInputOf>(input)
         .add_children(&[input_wrapper, list]);
 }
 
 fn spawn_item(
     In(SpawnItemInput {
-        index,
-        segments,
-        score,
-        picker,
-        list,
-        ..
+        matched: Match {
+            index,
+            segments,
+            score,
+        },
+        entities: PickerEntities { picker, list, .. },
     }): In<SpawnItemInput>,
     pickers: Query<&FuzzyPicker<SearchableItem>>,
     mut commands: Commands,
@@ -98,6 +95,18 @@ fn spawn_item(
         .id();
 
     commands.entity(list).add_child(text);
+}
+
+fn on_select(
+    In(SelectInput {
+        index,
+        entities: PickerEntities { picker, .. },
+    }): In<SelectInput>,
+    pickers: Query<&FuzzyPicker<SearchableItem>>,
+) {
+    let item = &pickers.get(picker).unwrap().items()[index];
+
+    info!("Picked '{}'", item.some_text);
 }
 
 struct SearchableItem {

@@ -26,12 +26,12 @@
 //!     let index = matched.index; // The index of the underlying item
 //!
 //!     // A slice of `MatchedStr`s, which are the ranges of the item's text
-//!     for segment in matched.segments {
+//!     for segment in &matched.segments {
 //!         let text = &segment.text;        // The text of this segment
 //!         let is_match = segment.is_match; // Should this segment of the string be higlighted (did it match the input string)?
 //!     }
 //!
-//!     matches.push((index, Vec::from(matched.segments())));
+//!     matches.push((index, Vec::from(matched.segments)));
 //! }
 //!
 //! assert_eq!(matches.len(), 2);
