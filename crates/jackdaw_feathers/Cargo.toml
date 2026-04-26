@@ -3,15 +3,16 @@ name = "jackdaw_feathers"
 version = "0.4.0"
 edition = "2024"
 description = "Internal crate for the jackdaw editor"
-license = "MIT OR Apache-2.0"
 repository = "https://github.com/jbuehler23/jackdaw"
-include = ["src/**/*", "fonts/**/*", "Cargo.toml", "LICENSE*"]
+license = "MIT OR Apache-2.0"
+include = ["Cargo.toml", "LICENSE*", "fonts/**/*", "src/**/*"]
 
 [dependencies]
 bevy.workspace = true
+bevy_easings.workspace = true
 bevy_monitors.workspace = true
 bevy_ui_text_input.workspace = true
-bevy_easings.workspace = true
+jackdaw_fuzzy.workspace = true
 jackdaw_widgets.workspace = true
 lucide-icons.workspace = true
 
