@@ -248,6 +248,57 @@ fn on_picker_item_activated(
     });
 }
 
+fn scroll_to_picker_item(
+    picker_items: Query<(&ComputedNode, &UiGlobalTransform, &ChildOf), With<PickerItem>>,
+    mut scroll_position: Query<(&mut ScrollPosition, &ComputedNode, &UiGlobalTransform)>,
+    focus: Res<InputFocus>,
+) {
+    if !focus.is_changed() {
+        return;
+    };
+
+    let Some(focused) = focus.0 else {
+        return;
+    };
+
+    let Ok((computed, transform, parent)) = picker_items.get(focused) else {
+        return;
+    };
+
+    let Ok((mut scroll_position, parent_computed, parent_transform)) =
+        scroll_position.get_mut(parent.0)
+    else {
+        return;
+    };
+
+    let child_top = transform.translation.y - computed.size().y / 2.0;
+    let child_bottom = transform.translation.y + computed.size().y / 2.0;
+    let parent_top = parent_transform.translation.y - parent_computed.content_box().size().y / 2.0;
+
+    // since scrolling changes the child positions, we add back the scroll to counteract that
+    let child_top_relative = child_top - parent_top + scroll_position.y;
+    let child_bottom_relative = child_bottom - parent_top + scroll_position.y;
+
+    // the bottom most visible point
+    let bottom_visible = scroll_position.y + parent_computed.content_box().size().y;
+
+    // ui position increases downwards, so if the top is above the scroll position, we scroll
+    if child_top_relative < scroll_position.y {
+        // off screen at the top
+        scroll_position.y = child_top_relative;
+    }
+
+    // and if the bottom is below the bottom most visible point, we scroll
+    if child_bottom_relative > bottom_visible {
+        // off screen at the bottom
+        // subtract to account for the parent size
+        scroll_position.y = f32::max(
+            child_bottom_relative - parent_computed.content_box().size().y,
+            0.0,
+        );
+    }
+}
+
 fn handle_picker_item_hover(
     picker_items: Query<(Entity, &Interaction, &mut BackgroundColor), With<PickerItem>>,
     focus: Res<InputFocus>,
@@ -434,6 +485,7 @@ pub(crate) fn plugin(app: &mut App) {
             process_fuzzy_pickers,
             on_text_edit_submit,
             handle_picker_item_hover,
+            scroll_to_picker_item,
         ),
     )
     .add_observer(on_fuzzy_picker_select)
