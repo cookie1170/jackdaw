@@ -40,11 +40,19 @@ pub(crate) fn toggle_command_palette(
     // need world access to run the availability checks :(
     world: &mut World,
 ) -> OperatorResult {
+    let mut any_existing = false;
+
     for existing in world
         .query_filtered::<Entity, With<CommandPalette>>()
         .query(world)
+        .iter()
+        .collect::<Vec<_>>()
     {
         world.entity_mut(existing).despawn();
+        any_existing = true;
+    }
+
+    if any_existing {
         return OperatorResult::Finished;
     }
 
@@ -84,23 +92,26 @@ fn spawn_item(
     let item = items.get(entities.picker).unwrap().at(matched.index);
 
     let item = commands
-        .spawn((picker_item(matched.index), children![(
-            Node {
-                width: percent(100),
-                align_items: AlignItems::Center,
-                flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::SpaceBetween,
-                ..Default::default()
-            },
-            children![
-                match_text(matched.segments),
-                (
-                    Text::new(item.id),
-                    TextFont::from(font.0.clone()).with_font_size(tokens::TEXT_SIZE_SM),
-                    TextColor(tokens::TEXT_MUTED_COLOR.into())
-                )
-            ]
-        )]))
+        .spawn((
+            picker_item(matched.index),
+            children![(
+                Node {
+                    width: percent(100),
+                    align_items: AlignItems::Center,
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::SpaceBetween,
+                    ..Default::default()
+                },
+                children![
+                    match_text(matched.segments),
+                    (
+                        Text::new(item.id),
+                        TextFont::from(font.0.clone()).with_font_size(tokens::TEXT_SIZE_SM),
+                        TextColor(tokens::TEXT_MUTED_COLOR.into())
+                    )
+                ]
+            )],
+        ))
         .id();
 
     commands.entity(entities.list).add_child(item);

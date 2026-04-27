@@ -1,7 +1,7 @@
 //! A fuzzy finder used by Jackdaw
 //!
 //! The matching is done by the [`FuzzyMatcher`] struct, which stores a list of items
-//! which must implement the [`FuzzyItem`] trait.
+//! which must implement the [`Matchable`] trait.
 //!
 //! Example:
 //!
@@ -169,7 +169,7 @@ impl<T: Matchable> FuzzyMatcher<T> {
         }
 
         // Sort the matches in descending order
-        matches.sort_by(|a, b| b.0.cmp(&a.0));
+        matches.sort_by_key(|a| std::cmp::Reverse(a.0));
 
         FuzzyMatches {
             index: 0,
@@ -192,17 +192,14 @@ impl<'a> Iterator for FuzzyMatches<'a> {
     type Item = Match;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let Some((score, str, index)) = self.matches.get(self.index) else {
-            return None;
-        };
+        let (score, str, index) = self.matches.get(self.index)?;
 
         self.index += 1;
 
         let mut indices = vec![];
 
         let haystack = str.slice(..);
-        self.pattern
-            .indices(haystack, &mut self.matcher, &mut indices);
+        self.pattern.indices(haystack, self.matcher, &mut indices);
 
         let indices = indices.into_iter().collect::<HashSet<_>>();
 
@@ -215,7 +212,7 @@ impl<'a> Iterator for FuzzyMatches<'a> {
         for (index, char) in haystack.chars().enumerate() {
             let is_match = indices.contains(&(index as u32));
             if current_match.is_match != is_match {
-                if current_match.text.len() > 0 {
+                if !current_match.text.is_empty() {
                     matched_parts.push(current_match);
                 }
 
@@ -228,7 +225,7 @@ impl<'a> Iterator for FuzzyMatches<'a> {
             current_match.text.push(char);
         }
 
-        if current_match.text.len() > 0 {
+        if !current_match.text.is_empty() {
             matched_parts.push(current_match);
         }
 
@@ -253,8 +250,8 @@ pub struct Match {
     pub index: usize,
 }
 
-/// An invidiual segment of a [`Match`], which are intended to be used via
-/// [`TextSpan`](bevy::prelude::TextSpan)s
+/// An invidiual segment of a [`Match`], which may be used for coloring part of the text
+/// if it matches the input string
 #[derive(Debug, PartialEq, Clone)]
 pub struct MatchedStr {
     /// The part of the string that this segment contains

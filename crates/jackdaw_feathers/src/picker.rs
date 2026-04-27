@@ -278,7 +278,7 @@ pub fn picker<T: Pickable>(props: PickerProps<T>) -> impl Bundle {
         register_on_dismiss,
     } = props;
 
-    let str_items = items.iter().map(|i| i.get_text());
+    let str_items = items.iter().map(Matchable::get_text);
     let matcher = FuzzyMatcher::from_items(str_items);
 
     (
@@ -346,7 +346,7 @@ fn handle_picker_item_hover(
     focus: Res<InputFocus>,
 ) {
     for (entity, interaction, mut background) in picker_items {
-        let mut interaction = interaction.clone();
+        let mut interaction = *interaction;
         if focus.0.is_some_and(|f| f == entity) && interaction != Interaction::Pressed {
             interaction = Interaction::Hovered;
         }
@@ -467,7 +467,7 @@ pub fn match_text(segments: Box<[MatchedStr]>) -> impl Bundle {
         let color = if segment.is_match {
             tokens::TEXT_ACCENT
         } else {
-            tokens::TEXT_PRIMARY.into()
+            tokens::TEXT_PRIMARY
         };
         spans.push((TextSpan(segment.text), ThemedText, TextColor(color)));
     }

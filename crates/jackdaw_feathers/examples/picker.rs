@@ -52,9 +52,10 @@ fn spawn_item(
     mut commands: Commands,
 ) {
     let item = commands
-        .spawn((picker_item(matched.index), children![match_text(
-            matched.segments
-        )]))
+        .spawn((
+            picker_item(matched.index),
+            children![match_text(matched.segments)],
+        ))
         .id();
 
     commands.entity(entities.list).add_child(item);
