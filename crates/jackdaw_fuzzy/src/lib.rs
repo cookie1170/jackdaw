@@ -82,7 +82,7 @@ impl<T: ToString> Matchable for T {
 
 /// The engine for fuzzy matching.
 ///
-/// It contains a list of items, each of which must implement [`FuzzyItem`], and a pattern which
+/// It contains a list of items, each of which must implement [`Matchable`], and a pattern which
 /// the items are matched against. To set the pattern, use [`update_pattern`](Self::update_pattern) or [`with_pattern`](Self::with_pattern)
 #[derive(Debug, Clone)]
 pub struct FuzzyMatcher<T: Matchable> {
