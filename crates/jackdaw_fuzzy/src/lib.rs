@@ -69,12 +69,12 @@ use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32String};
 
 /// This trait must be implemented by any item used with a [`FuzzyMatcher`]
-pub trait FuzzyItem {
+pub trait Matchable {
     /// Gets the string that this item should be matched with
     fn get_text(&self) -> String;
 }
 
-impl<T: ToString> FuzzyItem for T {
+impl<T: ToString> Matchable for T {
     fn get_text(&self) -> String {
         self.to_string()
     }
@@ -85,19 +85,19 @@ impl<T: ToString> FuzzyItem for T {
 /// It contains a list of items, each of which must implement [`FuzzyItem`], and a pattern which
 /// the items are matched against. To set the pattern, use [`update_pattern`](Self::update_pattern) or [`with_pattern`](Self::with_pattern)
 #[derive(Debug, Clone)]
-pub struct FuzzyMatcher<T: FuzzyItem> {
+pub struct FuzzyMatcher<T: Matchable> {
     items: Vec<T>,
     pattern: Pattern,
     matcher: Matcher,
 }
 
-impl<T: FuzzyItem> Default for FuzzyMatcher<T> {
+impl<T: Matchable> Default for FuzzyMatcher<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: FuzzyItem> FuzzyMatcher<T> {
+impl<T: Matchable> FuzzyMatcher<T> {
     /// Creates a new fuzzy matcher with no items and pattern
     pub fn new() -> Self {
         Self::from_items(std::iter::empty())

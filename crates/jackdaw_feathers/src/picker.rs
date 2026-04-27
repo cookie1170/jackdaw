@@ -1,4 +1,5 @@
 use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::relationship::RelatedSpawner;
 use bevy::ecs::system::SystemId;
 use bevy::ecs::world::DeferredWorld;
 use bevy::feathers::font_styles::InheritableFont;
@@ -10,17 +11,19 @@ use bevy::ui_widgets;
 use bevy::ui_widgets::Activate;
 use bevy_ui_text_input::SubmitText;
 use jackdaw_fuzzy::FuzzyMatcher;
-pub use jackdaw_fuzzy::{FuzzyItem, Match};
+pub use jackdaw_fuzzy::{Match, Matchable};
+use lucide_icons::Icon;
 
+use crate::button::{ButtonClickEvent, IconButtonProps, icon_button};
 use crate::cursor::HoverCursor;
-use crate::icons::EditorFont;
+use crate::icons::{EditorFont, IconFont};
 use crate::scroll::scrollbar;
 use crate::text_edit::{TextEditProps, TextEditValue, text_edit};
 use crate::tokens;
 
-pub trait Matchable: FuzzyItem + Send + Sync + 'static {}
+pub trait Pickable: Matchable + Send + Sync + 'static {}
 
-impl<T: FuzzyItem + Send + Sync + 'static> Matchable for T {}
+impl<T: Matchable + Send + Sync + 'static> Pickable for T {}
 
 #[derive(Component)]
 #[component(on_replace)]
@@ -28,6 +31,7 @@ pub struct Picker {
     matcher: FuzzyMatcher<String>,
     spawn_item: SystemId<In<SpawnItemInput>>,
     on_select: SystemId<In<SelectInput>>,
+    on_dismiss: SystemId<In<PickerEntities>>,
 }
 
 #[derive(Component, Deref, Debug, PartialEq, Clone)]
@@ -71,57 +75,37 @@ pub struct PickerSelect {
     pub index: usize,
 }
 
-pub struct PickerProps<T: Matchable> {
+pub struct PickerProps<T: Pickable> {
     items: Vec<T>,
+    title: Option<String>,
+    dismissible: bool,
     register_spawn_item:
         Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SpawnItemInput>> + Send + Sync>>,
     register_on_select:
         Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SelectInput>> + Send + Sync>>,
+    register_on_dismiss:
+        Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<PickerEntities>> + Send + Sync>>,
 }
 
 #[derive(Component)]
 struct PickerConfig {
     matcher: Option<FuzzyMatcher<String>>,
+    title: Option<String>,
+    dismissible: bool,
     register_spawn_item:
         Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SpawnItemInput>> + Send + Sync>>,
     register_on_select:
         Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SelectInput>> + Send + Sync>>,
+    register_on_dismiss:
+        Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<PickerEntities>> + Send + Sync>>,
+
     initialized: bool,
-}
-
-#[derive(Component, Debug, Default, PartialEq, Clone)]
-pub struct PickerItems<T: Matchable>(Box<[T]>);
-
-impl<T: Matchable> PickerItems<T> {
-    pub fn items(&self) -> &[T] {
-        &self.0
-    }
-
-    pub fn at(&self, index: usize) -> &T {
-        &self.0[index]
-    }
-}
-
-pub fn picker<T: Matchable>(props: PickerProps<T>) -> impl Bundle {
-    let PickerProps {
-        items,
-        register_spawn_item,
-        register_on_select,
-    } = props;
-
-    let str_items = items.iter().map(|i| i.get_text());
-    let matcher = FuzzyMatcher::from_items(str_items);
-
-    (PickerItems(items.into_boxed_slice()), PickerConfig {
-        matcher: Some(matcher),
-        register_spawn_item,
-        register_on_select,
-        initialized: false,
-    })
 }
 
 fn setup_picker(
     pickers: Query<(Entity, &mut PickerConfig), Added<PickerConfig>>,
+    font: Res<EditorFont>,
+    icon_font: Res<IconFont>,
     mut commands: Commands,
 ) {
     for (entity, mut config) in pickers {
@@ -132,10 +116,12 @@ fn setup_picker(
 
         let spawn_item = (config.register_spawn_item.take().unwrap())(&mut commands);
         let on_select = (config.register_on_select.take().unwrap())(&mut commands);
+        let on_dismiss = (config.register_on_dismiss.take().unwrap())(&mut commands);
         let picker = Picker {
             matcher: config.matcher.take().unwrap(),
             spawn_item,
             on_select,
+            on_dismiss,
         };
 
         let input = commands
@@ -167,6 +153,69 @@ fn setup_picker(
             .add_children(&[scrollbar, list])
             .id();
 
+        let dismiss = if config.dismissible {
+            Some((
+                PickerDismissButton,
+                icon_button(IconButtonProps::new(Icon::X), &icon_font.0),
+            ))
+        } else {
+            None
+        };
+
+        let mut children = vec![];
+
+        if let Some(title) = config.title.take() {
+            let font = font.0.clone();
+
+            let titlebar = commands
+                .spawn((
+                    Node {
+                        padding: px(tokens::SPACING_XS).all(),
+                        align_items: AlignItems::Center,
+                        width: percent(100),
+                        ..Default::default()
+                    },
+                    Children::spawn(SpawnWith(|spawner: &mut RelatedSpawner<ChildOf>| {
+                        spawner.spawn((
+                            Node {
+                                flex_grow: 1.0,
+                                justify_content: JustifyContent::Center,
+                                ..Default::default()
+                            },
+                            children![(
+                                Text(title),
+                                TextFont::from(font).with_font_size(tokens::TEXT_SIZE_XL),
+                            )],
+                        ));
+
+                        if let Some(dismiss) = dismiss {
+                            spawner.spawn(dismiss);
+                        }
+                    })),
+                ))
+                .id();
+
+            children.extend(&[titlebar, input]);
+        } else if let Some(dismiss) = dismiss {
+            // if we put the dismiss button in the title bar with no title, it looks ugly
+            // because there's a lot of empty space so we put it after the input instead
+            let dismiss = commands.spawn(dismiss).id();
+            let input_container = commands
+                .spawn(Node {
+                    width: percent(100),
+                    column_gap: px(tokens::SPACING_SM),
+                    ..Default::default()
+                })
+                .add_children(&[input, dismiss])
+                .id();
+
+            children.push(input_container);
+        } else {
+            children.push(input);
+        }
+
+        children.push(list_container);
+
         let picker_entity = commands
             .spawn((
                 Node {
@@ -182,7 +231,7 @@ fn setup_picker(
                 BackgroundColor(tokens::PANEL_BG),
                 TabGroup::modal(),
             ))
-            .add_children(&[input, list_container])
+            .add_children(&children)
             .id();
 
         commands
@@ -201,6 +250,43 @@ fn setup_picker(
             .add_one_related::<PickerListOf>(list)
             .add_child(picker_entity);
     }
+}
+
+#[derive(Component, Debug, Default, PartialEq, Clone)]
+pub struct PickerItems<T: Pickable>(Box<[T]>);
+
+impl<T: Pickable> PickerItems<T> {
+    pub fn items(&self) -> &[T] {
+        &self.0
+    }
+
+    pub fn at(&self, index: usize) -> &T {
+        &self.0[index]
+    }
+}
+
+pub fn picker<T: Pickable>(props: PickerProps<T>) -> impl Bundle {
+    let PickerProps {
+        items,
+        title,
+        dismissible,
+        register_spawn_item,
+        register_on_select,
+        register_on_dismiss,
+    } = props;
+
+    let str_items = items.iter().map(|i| i.get_text());
+    let matcher = FuzzyMatcher::from_items(str_items);
+
+    (PickerItems(items.into_boxed_slice()), PickerConfig {
+        matcher: Some(matcher),
+        title,
+        dismissible,
+        register_spawn_item,
+        register_on_select,
+        register_on_dismiss,
+        initialized: false,
+    })
 }
 
 #[derive(Component, Debug, Default, PartialEq, Clone, Copy)]
@@ -246,6 +332,30 @@ fn on_picker_item_activated(
         entity: list_of.0,
         index: item.0,
     });
+}
+
+fn handle_picker_item_hover(
+    picker_items: Query<(Entity, &Interaction, &mut BackgroundColor), With<PickerItem>>,
+    focus: Res<InputFocus>,
+) {
+    for (entity, interaction, mut background) in picker_items {
+        let mut interaction = interaction.clone();
+        if focus.0.is_some_and(|f| f == entity) && interaction != Interaction::Pressed {
+            interaction = Interaction::Hovered;
+        }
+
+        match interaction {
+            Interaction::Pressed => {
+                background.0 = tokens::ACTIVE_BG;
+            }
+            Interaction::Hovered => {
+                background.0 = tokens::HOVER_BG;
+            }
+            Interaction::None => {
+                background.0 = tokens::ELEVATED_BG;
+            }
+        }
+    }
 }
 
 fn scroll_to_picker_item(
@@ -299,28 +409,34 @@ fn scroll_to_picker_item(
     }
 }
 
-fn handle_picker_item_hover(
-    picker_items: Query<(Entity, &Interaction, &mut BackgroundColor), With<PickerItem>>,
-    focus: Res<InputFocus>,
-) {
-    for (entity, interaction, mut background) in picker_items {
-        let mut interaction = interaction.clone();
-        if focus.0.is_some_and(|f| f == entity) && interaction != Interaction::Pressed {
-            interaction = Interaction::Hovered;
-        }
+#[derive(Component)]
+struct PickerDismissButton;
 
-        match interaction {
-            Interaction::Pressed => {
-                background.0 = tokens::ACTIVE_BG;
-            }
-            Interaction::Hovered => {
-                background.0 = tokens::HOVER_BG;
-            }
-            Interaction::None => {
-                background.0 = tokens::ELEVATED_BG;
-            }
-        }
-    }
+fn on_dismiss_activated(
+    trigger: On<ButtonClickEvent>,
+    picker_dismiss_query: Query<(), With<PickerDismissButton>>,
+    child_of: Query<&ChildOf>,
+    picker_query: Query<(Entity, &Picker, &WithPickerInput, &WithPickerList)>,
+    mut commands: Commands,
+) {
+    if picker_dismiss_query.get(trigger.entity).is_err() {
+        return;
+    };
+
+    let Some((picker_entity, picker, input, list)) = std::iter::once(trigger.entity)
+        .chain(child_of.iter_ancestors(trigger.entity))
+        .find_map(|e| picker_query.get(e).ok())
+    else {
+        return;
+    };
+
+    let entities = PickerEntities {
+        picker: picker_entity,
+        input: input.0,
+        list: list.0,
+    };
+
+    commands.run_system_with(picker.on_dismiss, entities);
 }
 
 #[derive(Component)]
@@ -352,7 +468,7 @@ pub fn match_text(matched: Match) -> impl Bundle {
     (Text::default(), Children::spawn(spans), MatchText)
 }
 
-fn process_fuzzy_pickers(
+fn process_pickers(
     pickers: Query<(Entity, &mut Picker, &WithPickerInput, &WithPickerList)>,
     text_edits: Query<&TextEditValue, Changed<TextEditValue>>,
     mut commands: Commands,
@@ -382,9 +498,9 @@ fn process_fuzzy_pickers(
     }
 }
 
-fn on_fuzzy_picker_select(
+fn on_picker_select(
     trigger: On<PickerSelect>,
-    pickers: Query<(&mut Picker, &WithPickerInput, &WithPickerList)>,
+    pickers: Query<(&Picker, &WithPickerInput, &WithPickerList)>,
     mut commands: Commands,
 ) {
     let Ok((picker, input, list)) = pickers.get(trigger.entity) else {
@@ -435,7 +551,7 @@ fn on_text_edit_submit(
     }
 }
 
-impl<T: Matchable> PickerProps<T> {
+impl<T: Pickable> PickerProps<T> {
     pub fn new<S1, M1, S2, M2>(spawn_item: S1, on_select: S2) -> Self
     where
         S1: IntoSystem<In<SpawnItemInput>, (), M1>,
@@ -445,11 +561,18 @@ impl<T: Matchable> PickerProps<T> {
         let on_select = IntoSystem::into_system(on_select);
         Self {
             items: vec![],
+            dismissible: true,
+            title: None,
             register_spawn_item: Some(Box::new(move |commands| {
                 commands.register_system(spawn_item)
             })),
             register_on_select: Some(Box::new(move |commands| {
                 commands.register_system(on_select)
+            })),
+            register_on_dismiss: Some(Box::new(move |commands| {
+                commands.register_system(|entities: In<PickerEntities>, mut commands: Commands| {
+                    commands.entity(entities.picker).try_despawn();
+                })
             })),
         }
     }
@@ -463,17 +586,42 @@ impl<T: Matchable> PickerProps<T> {
         self.items.push(item);
         self
     }
+
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    pub fn with_dismissible(mut self, value: bool) -> Self {
+        self.dismissible = value;
+        self
+    }
+
+    pub fn on_dismiss<S, M>(mut self, on_dismiss: S) -> Self
+    where
+        S: IntoSystem<In<PickerEntities>, (), M>,
+    {
+        let on_dismiss = IntoSystem::into_system(on_dismiss);
+        self.register_on_dismiss = Some(Box::new(move |commands| {
+            commands.register_system(on_dismiss)
+        }));
+
+        self
+    }
 }
 
 impl Picker {
     fn on_replace(mut world: DeferredWorld, ctx: HookContext) {
         let entity = world.entity(ctx.entity);
         let picker = entity.get::<Self>().unwrap();
-        let (spawn_item, on_select) = (picker.spawn_item, picker.on_select);
+        let (spawn_item, on_select, on_dismiss) =
+            (picker.spawn_item, picker.on_select, picker.on_dismiss);
         let mut commands = world.commands();
+
         // Clean up after ourselves!
         commands.unregister_system(spawn_item);
         commands.unregister_system(on_select);
+        commands.unregister_system(on_dismiss);
     }
 }
 
@@ -482,12 +630,13 @@ pub(crate) fn plugin(app: &mut App) {
         Update,
         (
             setup_picker,
-            process_fuzzy_pickers,
+            process_pickers,
             on_text_edit_submit,
             handle_picker_item_hover,
             scroll_to_picker_item,
         ),
     )
-    .add_observer(on_fuzzy_picker_select)
-    .add_observer(on_picker_item_activated);
+    .add_observer(on_picker_select)
+    .add_observer(on_picker_item_activated)
+    .add_observer(on_dismiss_activated);
 }

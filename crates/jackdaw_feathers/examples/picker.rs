@@ -5,11 +5,11 @@ use jackdaw_feathers::EditorFeathersPlugin;
 use jackdaw_feathers::picker::{
     PickerItems, PickerProps, SelectInput, SpawnItemInput, match_text, picker, picker_item,
 };
-use jackdaw_fuzzy::FuzzyItem;
+use jackdaw_fuzzy::Matchable;
 
 struct Searchable(String);
 
-impl FuzzyItem for Searchable {
+impl Matchable for Searchable {
     fn get_text(&self) -> String {
         self.0.clone()
     }
@@ -41,7 +41,9 @@ fn spawn_picker(mut commands: Commands) {
         Searchable("I'm running out of things to say 2: Electric Boogaloo".into()),
     ];
 
-    let props = PickerProps::new(spawn_item, on_select).with_items(items);
+    let props = PickerProps::new(spawn_item, on_select)
+        .with_items(items)
+        .with_title("Hello world!");
     commands.spawn(picker(props));
 }
 
