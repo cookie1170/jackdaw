@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::system::SystemId;
 use bevy::ecs::world::DeferredWorld;
@@ -26,8 +24,8 @@ impl<T: FuzzyItem + Send + Sync + 'static> Matchable for T {}
 
 #[derive(Component)]
 #[component(on_replace)]
-pub struct Picker<T: Matchable> {
-    pub matcher: FuzzyMatcher<T>,
+pub struct Picker {
+    matcher: FuzzyMatcher<String>,
     spawn_item: SystemId<In<SpawnItemInput>>,
     on_select: SystemId<In<SelectInput>>,
 }
@@ -74,7 +72,7 @@ pub struct PickerSelect {
 }
 
 pub struct PickerProps<T: Matchable> {
-    pub matcher: FuzzyMatcher<T>,
+    items: Vec<T>,
     register_spawn_item:
         Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SpawnItemInput>> + Send + Sync>>,
     register_on_select:
@@ -82,8 +80,8 @@ pub struct PickerProps<T: Matchable> {
 }
 
 #[derive(Component)]
-struct PickerConfig<T: Matchable> {
-    matcher: Option<FuzzyMatcher<T>>,
+struct PickerConfig {
+    matcher: Option<FuzzyMatcher<String>>,
     register_spawn_item:
         Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SpawnItemInput>> + Send + Sync>>,
     register_on_select:
@@ -91,23 +89,39 @@ struct PickerConfig<T: Matchable> {
     initialized: bool,
 }
 
+#[derive(Component, Debug, Default, PartialEq, Clone)]
+pub struct PickerItems<T: Matchable>(Box<[T]>);
+
+impl<T: Matchable> PickerItems<T> {
+    pub fn items(&self) -> &[T] {
+        &self.0
+    }
+
+    pub fn at(&self, index: usize) -> &T {
+        &self.0[index]
+    }
+}
+
 pub fn picker<T: Matchable>(props: PickerProps<T>) -> impl Bundle {
     let PickerProps {
-        matcher,
+        items,
         register_spawn_item,
         register_on_select,
     } = props;
 
-    PickerConfig {
+    let str_items = items.iter().map(|i| i.get_text());
+    let matcher = FuzzyMatcher::from_items(str_items);
+
+    (PickerItems(items.into_boxed_slice()), PickerConfig {
         matcher: Some(matcher),
         register_spawn_item,
         register_on_select,
         initialized: false,
-    }
+    })
 }
 
-fn setup_picker<T: Matchable>(
-    pickers: Query<(Entity, &mut PickerConfig<T>), Added<PickerConfig<T>>>,
+fn setup_picker(
+    pickers: Query<(Entity, &mut PickerConfig), Added<PickerConfig>>,
     mut commands: Commands,
 ) {
     for (entity, mut config) in pickers {
@@ -287,8 +301,8 @@ pub fn match_text(matched: Match) -> impl Bundle {
     (Text::default(), Children::spawn(spans), MatchText)
 }
 
-fn process_fuzzy_pickers<T: Matchable>(
-    pickers: Query<(Entity, &mut Picker<T>, &WithPickerInput, &WithPickerList)>,
+fn process_fuzzy_pickers(
+    pickers: Query<(Entity, &mut Picker, &WithPickerInput, &WithPickerList)>,
     text_edits: Query<&TextEditValue, Changed<TextEditValue>>,
     mut commands: Commands,
 ) {
@@ -317,9 +331,9 @@ fn process_fuzzy_pickers<T: Matchable>(
     }
 }
 
-fn on_fuzzy_picker_select<T: Matchable>(
+fn on_fuzzy_picker_select(
     trigger: On<PickerSelect>,
-    pickers: Query<(&mut Picker<T>, &WithPickerInput, &WithPickerList)>,
+    pickers: Query<(&mut Picker, &WithPickerInput, &WithPickerList)>,
     mut commands: Commands,
 ) {
     let Ok((picker, input, list)) = pickers.get(trigger.entity) else {
@@ -338,11 +352,11 @@ fn on_fuzzy_picker_select<T: Matchable>(
     commands.run_system_with(picker.on_select, input);
 }
 
-fn on_text_edit_submit<T: Matchable>(
+fn on_text_edit_submit(
     mut submit_messages: MessageReader<SubmitText>,
     inputs: Query<&PickerInputOf>,
     child_of: Query<&ChildOf>,
-    mut pickers: Query<(Entity, &mut Picker<T>)>,
+    mut pickers: Query<(Entity, &mut Picker)>,
     mut commands: Commands,
 ) {
     for submit in submit_messages.read() {
@@ -378,9 +392,8 @@ impl<T: Matchable> PickerProps<T> {
     {
         let spawn_item = IntoSystem::into_system(spawn_item);
         let on_select = IntoSystem::into_system(on_select);
-        let matcher = FuzzyMatcher::new();
         Self {
-            matcher,
+            items: vec![],
             register_spawn_item: Some(Box::new(move |commands| {
                 commands.register_system(spawn_item)
             })),
@@ -391,22 +404,17 @@ impl<T: Matchable> PickerProps<T> {
     }
 
     pub fn with_items(mut self, items: impl IntoIterator<Item = T>) -> Self {
-        self.matcher.push_items(items);
+        self.items.extend(items);
         self
     }
 
     pub fn with_item(mut self, item: T) -> Self {
-        self.matcher.push_item(item);
+        self.items.push(item);
         self
-    }
-
-    /// Gets a reference to the list of items
-    pub fn items(&self) -> &[T] {
-        self.matcher.items()
     }
 }
 
-impl<T: Matchable> Picker<T> {
+impl Picker {
     fn on_replace(mut world: DeferredWorld, ctx: HookContext) {
         let entity = world.entity(ctx.entity);
         let picker = entity.get::<Self>().unwrap();
@@ -418,47 +426,16 @@ impl<T: Matchable> Picker<T> {
     }
 }
 
-pub trait RegisterPickerItemAppExt {
-    fn register_picker_item<T: Matchable>(&mut self) -> &mut Self;
-}
-
-impl RegisterPickerItemAppExt for App {
-    fn register_picker_item<T: Matchable>(&mut self) -> &mut Self {
-        if !self.is_plugin_added::<PickerItemPlugin<T>>() {
-            self.add_plugins(PickerItemPlugin::<T>::default());
-        }
-
-        self
-    }
-}
-
 pub(crate) fn plugin(app: &mut App) {
-    app.add_systems(Update, handle_picker_item_hover)
-        .add_observer(on_picker_item_activated);
-}
-
-pub struct PickerItemPlugin<T: Matchable> {
-    _phantom: PhantomData<T>,
-}
-
-impl<T: Matchable> Default for PickerItemPlugin<T> {
-    fn default() -> Self {
-        Self {
-            _phantom: Default::default(),
-        }
-    }
-}
-
-impl<T: Matchable> Plugin for PickerItemPlugin<T> {
-    fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (
-                setup_picker::<T>,
-                process_fuzzy_pickers::<T>,
-                on_text_edit_submit::<T>,
-            ),
-        )
-        .add_observer(on_fuzzy_picker_select::<T>);
-    }
+    app.add_systems(
+        Update,
+        (
+            setup_picker,
+            process_fuzzy_pickers,
+            on_text_edit_submit,
+            handle_picker_item_hover,
+        ),
+    )
+    .add_observer(on_fuzzy_picker_select)
+    .add_observer(on_picker_item_activated);
 }

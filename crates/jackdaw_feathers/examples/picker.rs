@@ -3,8 +3,7 @@ use bevy::input_focus::InputDispatchPlugin;
 use bevy::prelude::*;
 use jackdaw_feathers::EditorFeathersPlugin;
 use jackdaw_feathers::picker::{
-    Picker, PickerProps, RegisterPickerItemAppExt, SelectInput, SpawnItemInput, match_text, picker,
-    picker_item,
+    PickerItems, PickerProps, SelectInput, SpawnItemInput, match_text, picker, picker_item,
 };
 use jackdaw_fuzzy::FuzzyItem;
 
@@ -56,8 +55,8 @@ fn spawn_item(input: In<SpawnItemInput>, mut commands: Commands) {
     commands.entity(input.entities.list).add_child(item);
 }
 
-fn on_select(input: In<SelectInput>, picker: Query<&Picker<Searchable>>) {
-    let item = &picker.get(input.entities.picker).unwrap().matcher.items()[input.index];
+fn on_select(input: In<SelectInput>, items: Query<&PickerItems<Searchable>>) {
+    let item = &items.get(input.entities.picker).unwrap().at(input.index);
     info!("Got item {}", item.0);
 }
 
@@ -71,6 +70,5 @@ fn main() -> AppExit {
         ))
         .add_systems(Startup, spawn_picker)
         .insert_resource(ClearColor(jackdaw_feathers::tokens::WINDOW_BG))
-        .register_picker_item::<Searchable>()
         .run()
 }
