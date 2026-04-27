@@ -10,6 +10,7 @@ pub mod brush_drag_ops;
 pub mod brush_element_ops;
 pub mod builtin_extensions;
 pub mod clip_ops;
+pub mod command_palette;
 pub mod commands;
 pub mod custom_properties;
 pub mod default_style;

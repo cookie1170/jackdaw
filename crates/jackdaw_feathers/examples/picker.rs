@@ -47,14 +47,17 @@ fn spawn_picker(mut commands: Commands) {
     commands.spawn(picker(props));
 }
 
-fn spawn_item(input: In<SpawnItemInput>, mut commands: Commands) {
+fn spawn_item(
+    In(SpawnItemInput { matched, entities }): In<SpawnItemInput>,
+    mut commands: Commands,
+) {
     let item = commands
-        .spawn((picker_item(input.matched.index), children![match_text(
-            input.matched.clone()
+        .spawn((picker_item(matched.index), children![match_text(
+            matched.segments
         )]))
         .id();
 
-    commands.entity(input.entities.list).add_child(item);
+    commands.entity(entities.list).add_child(item);
 }
 
 fn on_select(input: In<SelectInput>, items: Query<&PickerItems<Searchable>>) {

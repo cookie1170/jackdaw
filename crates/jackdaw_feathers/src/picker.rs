@@ -11,13 +11,14 @@ use bevy::ui_widgets;
 use bevy::ui_widgets::Activate;
 use bevy_ui_text_input::SubmitText;
 use jackdaw_fuzzy::FuzzyMatcher;
-pub use jackdaw_fuzzy::{Match, Matchable};
+pub use jackdaw_fuzzy::{Match, Matchable, MatchedStr};
 use lucide_icons::Icon;
 
 use crate::button::{ButtonClickEvent, IconButtonProps, icon_button};
 use crate::cursor::HoverCursor;
 use crate::icons::{EditorFont, IconFont};
 use crate::scroll::scrollbar;
+use crate::separator::{SeparatorProps, separator};
 use crate::text_edit::{TextEditProps, TextEditValue, text_edit};
 use crate::tokens;
 
@@ -214,7 +215,9 @@ fn setup_picker(
             children.push(input);
         }
 
-        children.push(list_container);
+        let separator = commands.spawn(separator(SeparatorProps::horizontal())).id();
+
+        children.extend(&[separator, list_container]);
 
         let picker_entity = commands
             .spawn((
@@ -278,15 +281,19 @@ pub fn picker<T: Pickable>(props: PickerProps<T>) -> impl Bundle {
     let str_items = items.iter().map(|i| i.get_text());
     let matcher = FuzzyMatcher::from_items(str_items);
 
-    (PickerItems(items.into_boxed_slice()), PickerConfig {
-        matcher: Some(matcher),
-        title,
-        dismissible,
-        register_spawn_item,
-        register_on_select,
-        register_on_dismiss,
-        initialized: false,
-    })
+    (
+        PickerItems(items.into_boxed_slice()),
+        PickerConfig {
+            matcher: Some(matcher),
+            title,
+            dismissible,
+            register_spawn_item,
+            register_on_select,
+            register_on_dismiss,
+            initialized: false,
+        },
+        ZIndex(1000),
+    )
 }
 
 #[derive(Component, Debug, Default, PartialEq, Clone, Copy)]
@@ -453,10 +460,10 @@ impl MatchText {
     }
 }
 
-pub fn match_text(matched: Match) -> impl Bundle {
-    let mut spans = Vec::with_capacity(matched.segments.len());
+pub fn match_text(segments: Box<[MatchedStr]>) -> impl Bundle {
+    let mut spans = Vec::with_capacity(segments.len());
 
-    for segment in matched.segments {
+    for segment in segments {
         let color = if segment.is_match {
             tokens::TEXT_ACCENT
         } else {
