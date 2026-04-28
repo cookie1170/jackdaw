@@ -9,12 +9,13 @@
 //! unregistering stored `SystemId`s, removing entries from the dock
 //! `WindowRegistry`, and so on.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::extensions_config::init_extension;
 use crate::operator::cancel_active_modal;
-use crate::prelude::*;
+use crate::{TopLevelMenu, prelude::*};
 use bevy::ecs::component::ComponentId;
 use bevy::ecs::system::{SystemId, SystemParam};
 use bevy::prelude::*;
@@ -26,7 +27,7 @@ pub(super) fn plugin(app: &mut App) {
         .add_observer(deindex_and_cleanup_operator_on_remove)
         .add_observer(cleanup_window_on_remove)
         .add_observer(cleanup_workspace_on_remove)
-        .add_observer(cleanup_panel_extension_on_remove)
+        .add_observer(cleanup_window_extension_on_remove)
         .add_observer(cleanup_resource_on_remove);
     app.world_mut().register_component::<ActiveModalOperator>();
 }
@@ -108,6 +109,18 @@ impl OperatorEntity {
     pub fn description(&self) -> &'static str {
         self.description
     }
+
+    /// Returns `true` if the operator is modal.
+    pub fn is_modal(&self) -> bool {
+        self.modal
+    }
+
+    /// Returns `true` if the operator allows automatic undos. Note that the
+    /// operator may implement its own undo behavior manually,
+    /// so even if this returns `false`, the operator may still support undo.
+    pub fn allows_undo(&self) -> bool {
+        self.allows_undo
+    }
 }
 
 /// Tracks the currently-active modal operator. Exactly zero or one is
@@ -177,11 +190,11 @@ pub(crate) struct RegisteredWorkspace {
     pub(crate) id: String,
 }
 
-/// Marks an entity as tracking a panel-extension registration (a section
-/// injected into an existing panel via `ExtensionContext::extend_window`).
+/// Marks an entity as tracking a window-extension registration (a section
+/// injected into an existing window via `ExtensionContext::extend_window`).
 #[derive(Component, Clone, Debug)]
-pub(crate) struct RegisteredPanelExtension {
-    pub(crate) panel_id: String,
+pub(crate) struct RegisteredWindowExtension {
+    pub(crate) window_id: Cow<'static, str>,
     pub(crate) section_index: usize,
 }
 
@@ -197,7 +210,7 @@ pub(crate) struct RegisteredPanelExtension {
 /// for nested menus later without breaking callers.
 #[derive(Component, Clone, Debug)]
 pub struct RegisteredMenuEntry {
-    pub menu: String,
+    pub menu: TopLevelMenu,
     pub label: String,
     pub operator_id: &'static str,
 }
@@ -504,13 +517,13 @@ pub(crate) fn cleanup_workspace_on_remove(
 
 /// Remove a panel extension section from the registry when its marker
 /// entity despawns.
-pub(crate) fn cleanup_panel_extension_on_remove(
-    trigger: On<Remove, RegisteredPanelExtension>,
-    registrations: Query<&RegisteredPanelExtension>,
-    mut registry: ResMut<crate::PanelExtensionRegistry>,
+pub(crate) fn cleanup_window_extension_on_remove(
+    trigger: On<Remove, RegisteredWindowExtension>,
+    registrations: Query<&RegisteredWindowExtension>,
+    mut registry: ResMut<crate::WindowExtensionRegistry>,
 ) {
     if let Ok(r) = registrations.get(trigger.event_target()) {
-        registry.remove(&r.panel_id, r.section_index);
+        registry.remove(&r.window_id, r.section_index);
     }
 }
 
