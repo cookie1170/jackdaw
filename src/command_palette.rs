@@ -3,8 +3,7 @@ use jackdaw_api::prelude::*;
 use jackdaw_api_internal::lifecycle::OperatorEntity;
 use jackdaw_feathers::icons::EditorFont;
 use jackdaw_feathers::picker::{
-    Matchable, PickerItems, PickerProps, SelectInput, SpawnItemInput, match_text, picker,
-    picker_item,
+    Matchable, PickerItems, PickerProps, SelectInput, SpawnItemInput, match_text, picker_item,
 };
 use jackdaw_feathers::tokens;
 
@@ -63,7 +62,7 @@ pub(crate) fn toggle_command_palette(
         .with_items(operators)
         .with_title("Command Palette");
 
-    world.spawn((picker(props), CommandPalette));
+    world.spawn((props, CommandPalette));
 
     OperatorResult::Finished
 }

@@ -3,7 +3,7 @@ use bevy::input_focus::InputDispatchPlugin;
 use bevy::prelude::*;
 use jackdaw_feathers::EditorFeathersPlugin;
 use jackdaw_feathers::picker::{
-    PickerItems, PickerProps, SelectInput, SpawnItemInput, match_text, picker, picker_item,
+    PickerItems, PickerProps, SelectInput, SpawnItemInput, match_text, picker_item,
 };
 use jackdaw_fuzzy::Matchable;
 
@@ -44,7 +44,8 @@ fn spawn_picker(mut commands: Commands) {
     let props = PickerProps::new(spawn_item, on_select)
         .with_items(items)
         .with_title("Hello world!");
-    commands.spawn(picker(props));
+
+    commands.spawn(props);
 }
 
 fn spawn_item(
