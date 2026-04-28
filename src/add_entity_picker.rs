@@ -148,7 +148,7 @@ pub fn collect_add_menu_items(world: &mut World) -> Vec<AddMenuItem> {
     )>();
     let mut ext_entries: Vec<(Entity, String, String)> = Vec::new();
     for (entry, parent) in q.iter(world) {
-        if entry.menu != "Add" {
+        if entry.menu != TopLevelMenu::Add {
             continue;
         }
         let ext_entity = parent.map(ChildOf::parent).unwrap_or(Entity::PLACEHOLDER);
