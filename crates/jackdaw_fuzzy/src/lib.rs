@@ -19,8 +19,11 @@
 //!         self.name.clone()
 //!     }
 //!
-//!     fn category(&self) -> Option<String> {
-//!         Some(self.category.clone())
+//!     fn category(&self) -> Category {
+//!         Category {
+//!             name: Some(self.category.clone()),
+//!             order: None,
+//!         }
 //!     }
 //! }
 //!
@@ -59,24 +62,31 @@ use std::collections::HashMap;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
+/// A category that items may be placed in when searching
+#[derive(Debug, Default, PartialEq, Eq, Hash, Clone)]
+pub struct Category {
+    /// The name of the category, if any
+    pub name: Option<String>,
+    /// The order that the category should appear at. The greater, the earlier it appears
+    pub order: i32,
+}
+
 /// This trait must be implemented by any item used with a [`FuzzyMatcher`]
 pub trait Matchable {
     /// Gets the string that this item should be matched with
     #[must_use]
     fn haystack(&self) -> String;
 
-    /// Gets the category that this item should be placed in, if any
+    /// Gets the category that this item should be placed in
     #[must_use]
-    fn category(&self) -> Option<String>;
+    fn category(&self) -> Category {
+        Category::default()
+    }
 }
 
 impl<T: ToString> Matchable for T {
     fn haystack(&self) -> String {
         self.to_string()
-    }
-
-    fn category(&self) -> Option<String> {
-        None
     }
 }
 
@@ -168,13 +178,13 @@ impl<T: Matchable> FuzzyMatcher<T> {
         let mut char_buf = vec![]; // used for creating `Utf32Str` when they're non-ascii
         let mut indices = vec![]; // used for getting the match indices
 
-        let mut categories: HashMap<Option<String>, Vec<Match>> =
+        let mut categories: HashMap<Category, Vec<Match>> =
             HashMap::with_capacity(self.items().len());
 
         for (index, item) in self.items.iter().enumerate() {
             let haystack = item.haystack();
-            let haystack = Utf32Str::new(&haystack, &mut char_buf);
-            let Some(score) = self.pattern.score(haystack, &mut self.matcher) else {
+            let haystack_str = Utf32Str::new(&haystack, &mut char_buf);
+            let Some(score) = self.pattern.score(haystack_str, &mut self.matcher) else {
                 // if the score is `None`, it doesn't match the pattern at all
                 continue;
             };
@@ -183,7 +193,7 @@ impl<T: Matchable> FuzzyMatcher<T> {
             indices.clear();
 
             self.pattern
-                .indices(haystack, &mut self.matcher, &mut indices);
+                .indices(haystack_str, &mut self.matcher, &mut indices);
 
             let mut segments = vec![];
             let mut current_match = MatchedStr {
@@ -191,7 +201,7 @@ impl<T: Matchable> FuzzyMatcher<T> {
                 is_match: false,
             };
 
-            for (index, char) in haystack.chars().enumerate() {
+            for (index, char) in haystack_str.chars().enumerate() {
                 let is_match = indices.contains(&(index as u32));
                 if current_match.is_match != is_match {
                     if !current_match.text.is_empty() {
@@ -213,6 +223,7 @@ impl<T: Matchable> FuzzyMatcher<T> {
 
             let matched = Match {
                 segments: segments.into_boxed_slice(),
+                haystack,
                 score,
                 index,
             };
@@ -224,10 +235,10 @@ impl<T: Matchable> FuzzyMatcher<T> {
 
         let mut categories: Vec<_> = categories
             .into_iter()
-            .map(|(name, mut items)| {
-                items.sort_by_key(|i| std::cmp::Reverse(i.score));
+            .map(|(category, mut items)| {
+                items.sort_by(|a, b| (b.score, &a.haystack).cmp(&(a.score, &b.haystack)));
                 MatchCategory {
-                    name,
+                    category,
                     items: items.into_boxed_slice(),
                 }
             })
@@ -237,8 +248,12 @@ impl<T: Matchable> FuzzyMatcher<T> {
             // the very first item has the highest score in the category
             let score_a = a.items.first().map(|i| i.score).unwrap_or(0);
             let score_b = b.items.first().map(|i| i.score).unwrap_or(0);
-            // sort descending in score, but ascending in name
-            (score_b, &a.name).cmp(&(score_a, &b.name))
+            // sort descending in score and order, but ascending in name
+            (score_b, b.category.order, &a.category.name).cmp(&(
+                score_a,
+                a.category.order,
+                &b.category.name,
+            ))
         });
 
         categories.into_boxed_slice()
@@ -247,8 +262,8 @@ impl<T: Matchable> FuzzyMatcher<T> {
 
 /// A category matched by a [`FuzzyMatcher`]
 pub struct MatchCategory {
-    /// The name of this category, if provided
-    pub name: Option<String>,
+    /// The category info
+    pub category: Category,
     /// The items in this category, sorted with the highest scoring items being first
     pub items: Box<[Match]>,
 }
@@ -260,6 +275,8 @@ pub struct Match {
     pub segments: Box<[MatchedStr]>,
     /// How well does the item match the input?
     pub score: u32,
+    /// The original haystack (name) of the item
+    pub haystack: String,
     /// The index of the underlying item
     pub index: usize,
 }

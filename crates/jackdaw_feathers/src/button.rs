@@ -1,3 +1,4 @@
+use bevy::input_focus::InputFocus;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use lucide_icons::Icon;
@@ -456,18 +457,26 @@ fn setup_button(
 }
 
 fn handle_hover(
+    changed: Query<(), Changed<Hovered>>,
     mut buttons: Query<
         (
+            Entity,
             &ButtonVariant,
             &Hovered,
             &mut BackgroundColor,
             &mut BorderColor,
         ),
-        (Changed<Hovered>, With<EditorButton>),
+        With<EditorButton>,
     >,
+    focus: Res<InputFocus>,
 ) {
-    for (variant, hovered, mut bg, mut border) in &mut buttons {
-        let is_hovered = hovered.get();
+    let focus_changed = focus.is_changed();
+    for (entity, variant, hovered, mut bg, mut border) in &mut buttons {
+        if !(focus_changed || changed.get(entity).is_ok()) {
+            continue;
+        };
+
+        let is_hovered = hovered.get() || focus.0 == Some(entity);
         bg.0 = variant
             .bg_color(is_hovered)
             .with_alpha(variant.bg_opacity(is_hovered))

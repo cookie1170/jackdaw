@@ -5,7 +5,7 @@ use jackdaw_feathers::EditorFeathersPlugin;
 use jackdaw_feathers::picker::{
     PickerItems, PickerProps, SelectInput, SpawnItemInput, match_text, picker_item,
 };
-use jackdaw_fuzzy::Matchable;
+use jackdaw_fuzzy::{Category, Matchable};
 
 struct Searchable {
     haystack: String,
@@ -26,8 +26,11 @@ impl Matchable for Searchable {
         self.haystack.clone()
     }
 
-    fn category(&self) -> Option<String> {
-        self.category.clone()
+    fn category(&self) -> Category {
+        Category {
+            order: None,
+            name: self.category.clone(),
+        }
     }
 }
 

@@ -3,19 +3,19 @@ use bevy::ecs::relationship::RelatedSpawner;
 use bevy::ecs::system::SystemId;
 use bevy::ecs::world::DeferredWorld;
 use bevy::feathers::font_styles::InheritableFont;
+use bevy::feathers::handle_or_path::HandleOrPath;
 use bevy::feathers::theme::ThemedText;
 use bevy::input_focus::InputFocus;
 use bevy::input_focus::tab_navigation::{TabGroup, TabIndex};
 use bevy::prelude::*;
-use bevy::ui_widgets;
-use bevy::ui_widgets::Activate;
 use bevy_ui_text_input::SubmitText;
 use jackdaw_fuzzy::FuzzyMatcher;
-pub use jackdaw_fuzzy::{Match, Matchable, MatchedStr};
+pub use jackdaw_fuzzy::{Category, Match, Matchable, MatchedStr};
 use lucide_icons::Icon;
 
-use crate::button::{ButtonClickEvent, ButtonVariant, IconButtonProps, icon_button};
-use crate::cursor::HoverCursor;
+use crate::button::{
+    ButtonClickEvent, ButtonSize, ButtonVariant, IconButtonProps, button_base, icon_button,
+};
 use crate::icons::{EditorFont, IconFont};
 use crate::scroll::scrollbar;
 use crate::separator::{SeparatorProps, separator};
@@ -146,8 +146,6 @@ impl<T: Pickable> PickerProps<T> {
         let list = commands
             .spawn(Node {
                 flex_direction: FlexDirection::Column,
-                padding: px(tokens::SPACING_MD).all(),
-                row_gap: px(tokens::SPACING_SM),
                 width: percent(100),
                 max_height: px(400),
                 overflow: Overflow::scroll_y(),
@@ -229,21 +227,28 @@ impl<T: Pickable> PickerProps<T> {
                     flex_direction: FlexDirection::Column,
                     border: px(1).all(),
                     border_radius: BorderRadius::all(px(tokens::BORDER_RADIUS_MD)),
+                    padding: px(tokens::SPACING_MD).all(),
+                    row_gap: px(tokens::SPACING_MD),
                     width: px(600),
                     ..default()
                 },
                 BorderColor::all(tokens::BORDER_COLOR),
-                BackgroundColor(tokens::BACKGROUND_COLOR.into()),
+                BackgroundColor(tokens::PANEL_BG),
                 TabGroup::modal(),
+                BoxShadow(vec![ShadowStyle {
+                    x_offset: Val::ZERO,
+                    y_offset: Val::Px(4.0),
+                    blur_radius: Val::Px(16.0),
+                    spread_radius: Val::ZERO,
+                    color: tokens::SHADOW_COLOR,
+                }]),
             ))
             .with_child((
                 Node {
                     flex_direction: FlexDirection::Column,
                     row_gap: px(tokens::SPACING_MD),
-                    padding: px(tokens::SPACING_MD).all(),
                     ..default()
                 },
-                BackgroundColor(tokens::PANEL_BG),
                 Children::spawn(WithRelated::new(header_items)),
             ))
             .with_child((
@@ -300,24 +305,20 @@ pub struct PickerItem(pub usize);
 #[must_use]
 pub fn picker_item(index: usize) -> impl Bundle {
     (
-        Node {
-            width: percent(100),
-            padding: px(tokens::SPACING_SM).all(),
-            border_radius: BorderRadius::all(px(tokens::BORDER_RADIUS_SM)),
-            ..default()
-        },
-        BackgroundColor(tokens::ELEVATED_BG),
-        Interaction::default(),
-        HoverCursor(bevy::window::SystemCursorIcon::Pointer),
+        button_base(
+            ButtonVariant::Ghost,
+            ButtonSize::MD,
+            true,
+            FlexDirection::Column,
+        ),
         PickerItem(index),
         // if everything is the same tab index, it's ordered by the child index
         TabIndex(0),
-        ui_widgets::Button,
     )
 }
 
 fn on_picker_item_activated(
-    trigger: On<Activate>,
+    trigger: On<ButtonClickEvent>,
     item: Query<&PickerItem>,
     list: Query<&PickerListOf>,
     child_of: Query<&ChildOf>,
@@ -338,30 +339,6 @@ fn on_picker_item_activated(
         entity: list_of.0,
         index: item.0,
     });
-}
-
-fn handle_picker_item_hover(
-    picker_items: Query<(Entity, &Interaction, &mut BackgroundColor), With<PickerItem>>,
-    focus: Res<InputFocus>,
-) {
-    for (entity, interaction, mut background) in picker_items {
-        let mut interaction = *interaction;
-        if focus.0.is_some_and(|f| f == entity) && interaction != Interaction::Pressed {
-            interaction = Interaction::Hovered;
-        }
-
-        match interaction {
-            Interaction::Pressed => {
-                background.0 = tokens::ACTIVE_BG;
-            }
-            Interaction::Hovered => {
-                background.0 = tokens::HOVER_BG;
-            }
-            Interaction::None => {
-                background.0 = tokens::ELEVATED_BG;
-            }
-        }
-    }
 }
 
 fn scroll_to_picker_item(
@@ -459,9 +436,10 @@ impl MatchText {
     fn on_insert(mut world: DeferredWorld, ctx: HookContext) {
         let font = world.resource::<EditorFont>().0.clone();
         let mut commands = world.commands();
-        commands
-            .entity(ctx.entity)
-            .insert(InheritableFont::from_handle(font));
+        commands.entity(ctx.entity).insert(InheritableFont {
+            font: HandleOrPath::Handle(font),
+            font_size: tokens::TEXT_SIZE,
+        });
     }
 }
 
@@ -477,7 +455,12 @@ pub fn match_text(segments: Box<[MatchedStr]>) -> impl Bundle {
         spans.push((TextSpan(segment.text), ThemedText, TextColor(color)));
     }
 
-    (Text::default(), Children::spawn(spans), MatchText)
+    (
+        Text::default(),
+        Children::spawn(spans),
+        MatchText,
+        ThemedText,
+    )
 }
 
 fn process_pickers(
@@ -499,7 +482,7 @@ fn process_pickers(
         let matches = picker.matcher.matches();
         for (index, category) in matches.into_iter().enumerate() {
             let font = font.0.clone();
-            let name = category.name;
+            let name = category.category.name;
 
             // don't spawn it if the first category is unnamed
             if name.is_some() || index != 0 {
@@ -696,7 +679,7 @@ impl Picker {
 
 struct Item {
     haystack: String,
-    category: Option<String>,
+    category: Category,
 }
 
 impl Matchable for Item {
@@ -704,7 +687,7 @@ impl Matchable for Item {
         self.haystack.clone()
     }
 
-    fn category(&self) -> Option<String> {
+    fn category(&self) -> Category {
         self.category.clone()
     }
 }
@@ -712,12 +695,7 @@ impl Matchable for Item {
 pub(crate) fn plugin(app: &mut App) {
     app.add_systems(
         Update,
-        (
-            process_pickers,
-            on_text_edit_submit,
-            handle_picker_item_hover,
-            scroll_to_picker_item,
-        ),
+        (process_pickers, on_text_edit_submit, scroll_to_picker_item),
     )
     .add_observer(on_picker_select)
     .add_observer(on_picker_item_activated)

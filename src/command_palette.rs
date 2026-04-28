@@ -62,7 +62,12 @@ pub(crate) fn toggle_command_palette(
         .items(operators)
         .title("Command Palette");
 
-    world.spawn((props, CommandPalette));
+    world.spawn((
+        props,
+        CommandPalette,
+        crate::BlocksCameraInput,
+        crate::EditorEntity,
+    ));
 
     OperatorResult::Finished
 }
@@ -137,10 +142,5 @@ struct RegisteredOperator {
 impl Matchable for RegisteredOperator {
     fn haystack(&self) -> String {
         String::from(self.label)
-    }
-
-    fn category(&self) -> Option<String> {
-        // operators don't have categories yet :c
-        None
     }
 }
