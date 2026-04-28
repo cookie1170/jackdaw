@@ -22,7 +22,7 @@
 //!     fn category(&self) -> Category {
 //!         Category {
 //!             name: Some(self.category.clone()),
-//!             order: None,
+//!             order: 0,
 //!         }
 //!     }
 //! }
@@ -48,10 +48,10 @@
 //! let matches = matcher.matches();
 //!
 //! assert_eq!(matches.len(), 2);
-//! assert_eq!(matches[0].name, Some("Greetings".into()));
+//! assert_eq!(matches[0].category.name, Some("Greetings".into()));
 //! assert_eq!(matches[0].items[0].index, 1);
 //!
-//! assert_eq!(matches[1].name, Some("Questions".into()));
+//! assert_eq!(matches[1].category.name, Some("Questions".into()));
 //! assert_eq!(matches[1].items[0].index, 2);
 //!
 //! assert!(matches[0].items[0].score > matches[1].items[0].score);
