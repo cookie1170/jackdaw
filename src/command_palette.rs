@@ -14,6 +14,7 @@ struct CommandPalette;
 
 pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
     ctx.register_operator::<ToggleCommandPaletteOp>();
+    ctx.register_menu_entry::<ToggleCommandPaletteOp>(TopLevelMenu::Tools);
 
     ctx.entity_mut()
         .with_related::<ActionOf<CoreExtensionInputContext>>((
