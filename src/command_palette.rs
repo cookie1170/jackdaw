@@ -32,6 +32,7 @@ pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
 #[operator(
     id = "command_palette.toggle",
     label = "Toggle command palette",
+    is_available = no_modal_active,
     allows_undo = false
 )]
 pub(crate) fn toggle_command_palette(
@@ -71,6 +72,10 @@ pub(crate) fn toggle_command_palette(
     ));
 
     OperatorResult::Finished
+}
+
+fn no_modal_active(active: ActiveModalQuery) -> bool {
+    !active.is_modal_running()
 }
 
 fn get_operators(
