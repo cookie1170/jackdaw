@@ -248,7 +248,6 @@ impl Plugin for EditorCorePlugin {
                 alignment_guides::AlignmentGuidesPlugin,
                 navmesh::NavmeshPlugin,
                 terrain::TerrainPlugin,
-                prefab_picker::PrefabPickerPlugin,
                 remote::RemoteConnectionPlugin,
             ))
             .add_plugins(jackdaw_avian_integration::PhysicsOverlaysPlugin::<

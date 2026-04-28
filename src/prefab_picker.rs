@@ -1,34 +1,21 @@
 use std::path::PathBuf;
 
-use crate::EditorEntity;
-use bevy::{picking::hover::Hovered, prelude::*, ui_widgets::observe};
+use crate::{EditorEntity, project::ProjectRoot};
+use bevy::prelude::*;
 use jackdaw_feathers::{
-    icons::Icon,
-    text_edit::{self, TextEditProps, TextEditValue},
+    icons::{EditorFont, Icon, IconFont, icon},
+    picker::{
+        Matchable, PickerItems, PickerProps, SelectInput, SpawnItemInput, match_text, picker_item,
+    },
     tokens,
 };
-
-pub struct PrefabPickerPlugin;
-
-impl Plugin for PrefabPickerPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (filter_prefab_picker, close_prefab_picker_on_dismiss)
-                .run_if(in_state(crate::AppState::Editor)),
-        );
-    }
-}
 
 #[derive(Component)]
 struct PrefabPicker;
 
-#[derive(Component)]
-struct PrefabPickerSearch;
-
-#[derive(Component)]
 struct PrefabPickerEntry {
-    display_name: String,
+    pub display_name: String,
+    pub path: String,
 }
 
 /// Open (or close, if already open) the prefab picker overlay.
@@ -53,176 +40,20 @@ pub fn open_prefab_picker(world: &mut World) {
         .map(super::project::ProjectRoot::assets_dir)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("assets"));
 
-    let mut prefabs: Vec<(String, String)> = Vec::new(); // (path, display_name)
+    let mut prefabs: Vec<PrefabPickerEntry> = Vec::new();
     scan_jsn_files(&assets_dir, &assets_dir, &mut prefabs);
-    prefabs.sort_by_key(|a| a.1.to_lowercase());
-
-    // Find the viewport entity to parent the picker to
-    let viewport_entity = world
-        .query_filtered::<Entity, With<crate::viewport::SceneViewport>>()
-        .iter(world)
-        .next();
-
-    let Some(parent_entity) = viewport_entity else {
-        warn!("No viewport found for prefab picker");
-        return;
-    };
-
-    let icon_font = world
-        .resource::<jackdaw_feathers::icons::IconFont>()
-        .0
-        .clone();
+    let picker = PickerProps::new(spawn_item, on_select)
+        .items(prefabs)
+        .title("Select Prefab")
+        .placeholder(Some("Search Prefabs..."));
 
     // Spawn picker
     let mut commands = world.commands();
-    let picker = commands
-        .spawn((
-            PrefabPicker,
-            crate::BlocksCameraInput,
-            EditorEntity,
-            Hovered::default(),
-            Node {
-                position_type: PositionType::Absolute,
-                flex_direction: FlexDirection::Column,
-                width: Val::Px(420.0),
-                max_height: Val::Px(600.0),
-                top: Val::Px(40.0),
-                left: Val::Percent(50.0),
-                margin: UiRect::left(Val::Px(-210.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(tokens::BORDER_RADIUS_MD)),
-                ..Default::default()
-            },
-            BackgroundColor(tokens::PANEL_BG),
-            BorderColor::all(tokens::BORDER_SUBTLE),
-            GlobalZIndex(100),
-            ChildOf(parent_entity),
-        ))
-        .id();
-
-    // Search input
-    commands.spawn((
-        PrefabPickerSearch,
-        text_edit::text_edit(
-            TextEditProps::default()
-                .with_placeholder("Search prefabs...")
-                .allow_empty(),
-        ),
-        ChildOf(picker),
-    ));
-
-    // Scrollable list
-    let list = commands
-        .spawn((
-            Node {
-                flex_direction: FlexDirection::Column,
-                flex_grow: 1.0,
-                overflow: Overflow::scroll_y(),
-                ..Default::default()
-            },
-            ChildOf(picker),
-        ))
-        .id();
-
-    if prefabs.is_empty() {
-        commands.spawn((
-            Text::new("No .jsn files found"),
-            TextFont {
-                font_size: tokens::FONT_SM,
-                ..Default::default()
-            },
-            TextColor(tokens::TEXT_SECONDARY),
-            Node {
-                padding: UiRect::all(Val::Px(tokens::SPACING_MD)),
-                ..Default::default()
-            },
-            ChildOf(list),
-        ));
-    }
-
-    for (path, display_name) in &prefabs {
-        let entry_path = path.clone();
-        let entry_display = display_name.clone();
-        let icon_font_clone = icon_font.clone();
-
-        let entry_id = commands
-            .spawn((
-                PrefabPickerEntry {
-                    display_name: entry_display.clone(),
-                },
-                Node {
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
-                    padding: UiRect::axes(Val::Px(tokens::SPACING_LG), Val::Px(tokens::SPACING_SM)),
-                    column_gap: Val::Px(tokens::SPACING_SM),
-                    width: Val::Percent(100.0),
-                    ..Default::default()
-                },
-                BackgroundColor(Color::NONE),
-                ChildOf(list),
-                observe(move |_: On<Pointer<Click>>, mut commands: Commands| {
-                    let path = entry_path.clone();
-                    commands.queue(move |world: &mut World| {
-                        // Close picker
-                        let pickers: Vec<Entity> = world
-                            .query_filtered::<Entity, With<PrefabPicker>>()
-                            .iter(world)
-                            .collect();
-                        for e in pickers {
-                            if let Ok(ec) = world.get_entity_mut(e) {
-                                ec.despawn();
-                            }
-                        }
-                        // Instantiate
-                        crate::entity_templates::instantiate_jsn_prefab(world, &path, Vec3::ZERO);
-                    });
-                }),
-                observe(
-                    move |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {
-                        if let Ok(mut bg) = bg.get_mut(hover.event_target()) {
-                            bg.0 = tokens::HOVER_BG;
-                        }
-                    },
-                ),
-                observe(
-                    move |out: On<Pointer<Out>>, mut bg: Query<&mut BackgroundColor>| {
-                        if let Ok(mut bg) = bg.get_mut(out.event_target()) {
-                            bg.0 = Color::NONE;
-                        }
-                    },
-                ),
-            ))
-            .id();
-
-        // Icon
-        commands.spawn((
-            Text::new(String::from(Icon::Blocks.unicode())),
-            TextFont {
-                font: icon_font_clone,
-                font_size: tokens::FONT_MD,
-                ..Default::default()
-            },
-            TextColor(tokens::FILE_ICON_COLOR),
-            ChildOf(entry_id),
-        ));
-
-        // Display name
-        commands.spawn((
-            Text::new(entry_display),
-            TextFont {
-                font_size: tokens::FONT_MD,
-                ..Default::default()
-            },
-            TextColor(tokens::TEXT_PRIMARY),
-            ChildOf(entry_id),
-        ));
-    }
-
-    world.flush();
+    commands.spawn((PrefabPicker, crate::BlocksCameraInput, EditorEntity, picker));
 }
 
 /// Recursively scan a directory for .jsn scene files.
-fn scan_jsn_files(dir: &PathBuf, _assets_root: &PathBuf, results: &mut Vec<(String, String)>) {
+fn scan_jsn_files(dir: &PathBuf, _assets_root: &PathBuf, results: &mut Vec<PrefabPickerEntry>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         warn!("Prefab picker: failed to read directory {:?}", dir);
         return;
@@ -264,44 +95,89 @@ fn scan_jsn_files(dir: &PathBuf, _assets_root: &PathBuf, results: &mut Vec<(Stri
                 });
 
             info!("Prefab picker: found {:?} -> {:?}", path_str, display_name);
-            results.push((path_str, display_name));
+            results.push(PrefabPickerEntry {
+                display_name,
+                path: path_str,
+            });
         }
     }
 }
 
-/// Close the prefab picker when Escape is pressed or when clicking outside.
-fn close_prefab_picker_on_dismiss(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    picker: Query<(Entity, &Hovered), With<PrefabPicker>>,
+fn spawn_item(
+    In(SpawnItemInput { matched, entities }): In<SpawnItemInput>,
+    items: Query<&PickerItems<PrefabPickerEntry>>,
+    project_root: Option<Res<ProjectRoot>>,
+    font: Res<EditorFont>,
+    icon_font: Res<IconFont>,
     mut commands: Commands,
-) {
-    let Ok((entity, hovered)) = picker.single() else {
-        return;
+) -> Result {
+    let item = items.get(entities.picker)?.at(matched.index)?;
+    let path = if let Some(project_root) = project_root {
+        project_root
+            .to_relative(item.path.clone())
+            .to_string_lossy()
+            .to_string()
+    } else {
+        item.path.clone()
     };
-    let esc = keyboard.just_pressed(KeyCode::Escape);
-    let clicked_outside = mouse.get_just_pressed().next().is_some() && !hovered.get();
-    if esc || clicked_outside {
-        commands.entity(entity).despawn();
-    }
+
+    commands.entity(entities.list).with_child((
+        picker_item(matched.index),
+        children![(
+            Node {
+                row_gap: px(tokens::SPACING_SM),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            children![
+                (
+                    Node {
+                        column_gap: px(tokens::SPACING_SM),
+                        ..default()
+                    },
+                    children![
+                        // Icon
+                        (icon(Icon::Blocks, tokens::TEXT_SIZE, icon_font.0.clone())),
+                        // Display name
+                        (match_text(matched.segments))
+                    ]
+                ),
+                (
+                    // Path
+                    Text(path),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: tokens::TEXT_SIZE_SM,
+                        ..default()
+                    },
+                    TextColor(tokens::TEXT_SECONDARY)
+                )
+            ],
+        )],
+    ));
+
+    Ok(())
 }
 
-/// Filter the prefab picker list based on search input.
-fn filter_prefab_picker(
-    search_query: Query<&TextEditValue, (With<PrefabPickerSearch>, Changed<TextEditValue>)>,
-    mut entries: Query<(Entity, &PrefabPickerEntry, &mut Node), Without<PrefabPickerSearch>>,
-) {
-    let Ok(search) = search_query.single() else {
-        return;
-    };
-    let filter = search.0.trim().to_lowercase();
+fn on_select(
+    input: In<SelectInput>,
+    items: Query<&PickerItems<PrefabPickerEntry>>,
+    mut commands: Commands,
+) -> Result {
+    let item = items.get(input.entities.picker)?.at(input.index)?;
+    let path = item.path.clone();
 
-    for (_entity, entry, mut node) in &mut entries {
-        let matches = filter.is_empty() || entry.display_name.to_lowercase().contains(&filter);
-        node.display = if matches {
-            Display::Flex
-        } else {
-            Display::None
-        };
+    commands.queue(move |world: &mut World| {
+        crate::entity_templates::instantiate_jsn_prefab(world, &path, Vec3::ZERO);
+    });
+
+    commands.entity(input.entities.picker).try_despawn();
+
+    Ok(())
+}
+
+impl Matchable for PrefabPickerEntry {
+    fn haystack(&self) -> String {
+        self.display_name.clone()
     }
 }
