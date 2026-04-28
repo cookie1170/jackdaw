@@ -59,8 +59,8 @@ pub(crate) fn toggle_command_palette(
     };
 
     let props = PickerProps::new(spawn_item, on_select)
-        .with_items(operators)
-        .with_title("Command Palette");
+        .items(operators)
+        .title("Command Palette");
 
     world.spawn((props, CommandPalette));
 
@@ -135,7 +135,12 @@ struct RegisteredOperator {
 }
 
 impl Matchable for RegisteredOperator {
-    fn get_text(&self) -> String {
+    fn haystack(&self) -> String {
         String::from(self.label)
+    }
+
+    fn category(&self) -> Option<String> {
+        // operators don't have categories yet :c
+        None
     }
 }

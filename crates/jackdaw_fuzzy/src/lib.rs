@@ -6,78 +6,77 @@
 //! Example:
 //!
 //! ```
-//! use jackdaw_fuzzy::{FuzzyMatcher, MatchedStr};
+//! use jackdaw_fuzzy::*;
 //!
-//! let strings = vec![
-//!     String::from("Hello world"),
-//!     String::from("Hi there"),
-//!     String::from("Hello there"),
-//!     String::from("Some more text"),
-//! ];
-//!
-//! let mut matcher = FuzzyMatcher::from_items(strings);
-//! matcher.update_pattern("Hello");
-//!
-//! let mut matches = vec![];
-//!
-//! // Iterates over the matches with the higher scoring ones first
-//! for matched in matcher.matches() {
-//!     let score = matched.score; // How closely did it match?
-//!     let index = matched.index; // The index of the underlying item
-//!
-//!     // A slice of `MatchedStr`s, which are the ranges of the item's text
-//!     for segment in &matched.segments {
-//!         let text = &segment.text;        // The text of this segment
-//!         let is_match = segment.is_match; // Should this segment of the string be higlighted (did it match the input string)?
-//!     }
-//!
-//!     matches.push((index, Vec::from(matched.segments)));
+//! /// This item will be matched
+//! struct Item {
+//!     name: String,
+//!     category: String,
 //! }
 //!
+//! impl Matchable for Item {
+//!     fn haystack(&self) -> String {
+//!         self.name.clone()
+//!     }
+//!
+//!     fn category(&self) -> Option<String> {
+//!         Some(self.category.clone())
+//!     }
+//! }
+//!
+//! let items = vec![
+//!     Item {
+//!         name: "Hello there".into(),
+//!         category: "Greetings".into(),
+//!     },
+//!     Item {
+//!         name: "Hey!".into(),
+//!         category: "Greetings".into(),
+//!     },
+//!     Item {
+//!         name: "How are you?".into(),
+//!         category: "Questions".into(),
+//!     },
+//! ];
+//!
+//! let mut matcher = FuzzyMatcher::from_items(items);
+//! matcher.update_pattern("hey");
+//!
+//! let matches = matcher.matches();
+//!
 //! assert_eq!(matches.len(), 2);
+//! assert_eq!(matches[0].name, Some("Greetings".into()));
+//! assert_eq!(matches[0].items[0].index, 1);
 //!
-//! assert_eq!(matches[0].0, 0);
-//! assert_eq!(&matches[0].1, &[
-//!     MatchedStr {
-//!         // "Hello" is a part of the input
-//!         text: "Hello".to_string(),
-//!         is_match: true,
-//!     },
-//!     MatchedStr {
-//!         // but " world" isn't
-//!         text: " world".to_string(),
-//!         is_match: false
-//!     }
-//! ]);
+//! assert_eq!(matches[1].name, Some("Questions".into()));
+//! assert_eq!(matches[1].items[0].index, 2);
 //!
-//! assert_eq!(matches[1].0, 2);
-//! assert_eq!(&matches[1].1, &[
-//!     MatchedStr {
-//!         text: "Hello".to_string(),
-//!         is_match: true,
-//!     },
-//!     MatchedStr {
-//!         text: " there".to_string(),
-//!         is_match: false
-//!     }
-//! ]);
+//! assert!(matches[0].items[0].score > matches[1].items[0].score);
 //! ```
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher, Utf32String};
+use nucleo_matcher::{Config, Matcher, Utf32Str};
 
 /// This trait must be implemented by any item used with a [`FuzzyMatcher`]
 pub trait Matchable {
     /// Gets the string that this item should be matched with
     #[must_use]
-    fn get_text(&self) -> String;
+    fn haystack(&self) -> String;
+
+    /// Gets the category that this item should be placed in, if any
+    #[must_use]
+    fn category(&self) -> Option<String>;
 }
 
 impl<T: ToString> Matchable for T {
-    fn get_text(&self) -> String {
+    fn haystack(&self) -> String {
         self.to_string()
+    }
+
+    fn category(&self) -> Option<String> {
+        None
     }
 }
 
@@ -85,6 +84,8 @@ impl<T: ToString> Matchable for T {
 ///
 /// It contains a list of items, each of which must implement [`Matchable`], and a pattern which
 /// the items are matched against. To set the pattern, use [`update_pattern`](Self::update_pattern) or [`with_pattern`](Self::with_pattern)
+///
+/// The items may be split into categories if [`Matchable::category`] returns `Some`
 #[derive(Debug, Clone)]
 pub struct FuzzyMatcher<T: Matchable> {
     items: Vec<T>,
@@ -159,92 +160,97 @@ impl<T: Matchable> FuzzyMatcher<T> {
         &self.items
     }
 
-    /// Compute and iterate over all the items that the pattern matches, sorted with the highest
-    /// scoring items positioned first
+    /// Compute all the matches and return a slice of categories,
+    /// sorted by the highest score in each category in descending order
     #[must_use]
-    pub fn matches(&mut self) -> FuzzyMatches<'_> {
-        let mut matches = Vec::with_capacity(self.items.len());
+    pub fn matches(&mut self) -> Box<[MatchCategory]> {
+        // these buffers are reused in order to not allocate them each computation
+        let mut char_buf = vec![]; // used for creating `Utf32Str` when they're non-ascii
+        let mut indices = vec![]; // used for getting the match indices
+
+        let mut categories: HashMap<Option<String>, Vec<Match>> =
+            HashMap::with_capacity(self.items().len());
 
         for (index, item) in self.items.iter().enumerate() {
-            let text = Utf32String::from(item.get_text());
-            let score = self.pattern.score(text.slice(..), &mut self.matcher);
-            let Some(score) = score else {
-                // If the score is `None`, it doesn't match the pattern at all
+            let haystack = item.haystack();
+            let haystack = Utf32Str::new(&haystack, &mut char_buf);
+            let Some(score) = self.pattern.score(haystack, &mut self.matcher) else {
+                // if the score is `None`, it doesn't match the pattern at all
                 continue;
             };
 
-            matches.push((score, text, index));
-        }
+            // clear the indices, since `Pattern::indices` doesn't
+            indices.clear();
 
-        // Sort the matches in descending order
-        matches.sort_by_key(|a| std::cmp::Reverse(a.0));
+            self.pattern
+                .indices(haystack, &mut self.matcher, &mut indices);
 
-        FuzzyMatches {
-            index: 0,
-            pattern: &self.pattern,
-            matcher: &mut self.matcher,
-            matches: matches.into_boxed_slice(),
-        }
-    }
-}
+            let mut segments = vec![];
+            let mut current_match = MatchedStr {
+                text: String::new(),
+                is_match: false,
+            };
 
-/// An iterator of matches by a [`FuzzyMatcher`]
-pub struct FuzzyMatches<'a> {
-    index: usize,
-    pattern: &'a Pattern,
-    matcher: &'a mut Matcher,
-    matches: Box<[(u32, Utf32String, usize)]>,
-}
+            for (index, char) in haystack.chars().enumerate() {
+                let is_match = indices.contains(&(index as u32));
+                if current_match.is_match != is_match {
+                    if !current_match.text.is_empty() {
+                        segments.push(current_match);
+                    }
 
-impl<'a> Iterator for FuzzyMatches<'a> {
-    type Item = Match;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let (score, str, index) = self.matches.get(self.index)?;
-
-        self.index += 1;
-
-        let mut indices = vec![];
-
-        let haystack = str.slice(..);
-        self.pattern.indices(haystack, self.matcher, &mut indices);
-
-        let indices = indices.into_iter().collect::<HashSet<_>>();
-
-        let mut matched_parts = vec![];
-        let mut current_match = MatchedStr {
-            text: String::new(),
-            is_match: false,
-        };
-
-        for (index, char) in haystack.chars().enumerate() {
-            let is_match = indices.contains(&(index as u32));
-            if current_match.is_match != is_match {
-                if !current_match.text.is_empty() {
-                    matched_parts.push(current_match);
+                    current_match = MatchedStr {
+                        text: String::new(),
+                        is_match,
+                    };
                 }
 
-                current_match = MatchedStr {
-                    text: String::new(),
-                    is_match,
-                };
+                current_match.text.push(char);
             }
 
-            current_match.text.push(char);
+            if !current_match.text.is_empty() {
+                segments.push(current_match);
+            }
+
+            let matched = Match {
+                segments: segments.into_boxed_slice(),
+                score,
+                index,
+            };
+
+            let category = item.category();
+            let entry = categories.entry(category).or_default();
+            entry.push(matched);
         }
 
-        if !current_match.text.is_empty() {
-            matched_parts.push(current_match);
-        }
+        let mut categories: Vec<_> = categories
+            .into_iter()
+            .map(|(name, mut items)| {
+                items.sort_by_key(|i| std::cmp::Reverse(i.score));
+                MatchCategory {
+                    name,
+                    items: items.into_boxed_slice(),
+                }
+            })
+            .collect();
 
-        let item = Match {
-            segments: matched_parts.into_boxed_slice(),
-            score: *score,
-            index: *index,
-        };
+        categories.sort_by(|a, b| {
+            // the very first item has the highest score in the category
+            let score_a = a.items.first().map(|i| i.score).unwrap_or(0);
+            let score_b = b.items.first().map(|i| i.score).unwrap_or(0);
+            // sort descending in score, but ascending in name
+            (score_b, &a.name).cmp(&(score_a, &b.name))
+        });
 
-        Some(item)
+        categories.into_boxed_slice()
     }
+}
+
+/// A category matched by a [`FuzzyMatcher`]
+pub struct MatchCategory {
+    /// The name of this category, if provided
+    pub name: Option<String>,
+    /// The items in this category, sorted with the highest scoring items being first
+    pub items: Box<[Match]>,
 }
 
 /// A single item matched by a [`FuzzyMatcher`]

@@ -7,11 +7,27 @@ use jackdaw_feathers::picker::{
 };
 use jackdaw_fuzzy::Matchable;
 
-struct Searchable(String);
+struct Searchable {
+    haystack: String,
+    category: Option<String>,
+}
+
+impl Searchable {
+    fn new(haystack: impl Into<String>, category: Option<&'static str>) -> Self {
+        Self {
+            haystack: haystack.into(),
+            category: category.map(Into::into),
+        }
+    }
+}
 
 impl Matchable for Searchable {
-    fn get_text(&self) -> String {
-        self.0.clone()
+    fn haystack(&self) -> String {
+        self.haystack.clone()
+    }
+
+    fn category(&self) -> Option<String> {
+        self.category.clone()
     }
 }
 
@@ -19,31 +35,31 @@ fn spawn_picker(mut commands: Commands) {
     commands.spawn(Camera2d);
 
     let items = vec![
-        Searchable("Hello world".into()),
-        Searchable("Hello there".into()),
-        Searchable("Hi there".into()),
-        Searchable("Some text".into()),
-        Searchable("Some more text".into()),
-        Searchable("Another bit of text".into()),
-        Searchable("A bunch more text".into()),
-        Searchable("And another item to search".into()),
-        Searchable("Yet more items to search".into()),
-        Searchable("I'm running out of things to say".into()),
-        Searchable("Hello world 2: Electric Boogaloo".into()),
-        Searchable("Hello there 2: Electric Boogaloo".into()),
-        Searchable("Hi there 2: Electric Boogaloo".into()),
-        Searchable("Some text 2: Electric Boogaloo".into()),
-        Searchable("Some more text 2: Electric Boogaloo".into()),
-        Searchable("Another bit of text 2: Electric Boogaloo".into()),
-        Searchable("A bunch more text 2: Electric Boogaloo".into()),
-        Searchable("And another item to search 2: Electric Boogaloo".into()),
-        Searchable("Yet more items to search 2: Electric Boogaloo".into()),
-        Searchable("I'm running out of things to say 2: Electric Boogaloo".into()),
+        Searchable::new("Hello world", Some("Greetings")),
+        Searchable::new("Hello there", Some("Greetings")),
+        Searchable::new("Hi there", Some("Greetings")),
+        Searchable::new("Some text", Some("Fillers")),
+        Searchable::new("Some more text", Some("Fillers")),
+        Searchable::new("Another bit of text", Some("Fillers")),
+        Searchable::new("A bunch more text", Some("Fillers")),
+        Searchable::new("And another item to search", Some("Fillers")),
+        Searchable::new("Yet more items to search", Some("Fillers")),
+        Searchable::new("I'm running out of things to say", None),
+        Searchable::new("Hello world 2", Some("Greetings 2")),
+        Searchable::new("Hello there 2", Some("Greetings 2")),
+        Searchable::new("Hi there 2", Some("Greetings 2")),
+        Searchable::new("Some text 2", Some("Fillers 2")),
+        Searchable::new("Some more text 2", Some("Fillers 2")),
+        Searchable::new("Another bit of text 2", Some("Fillers 2")),
+        Searchable::new("A bunch more text 2", Some("Fillers 2")),
+        Searchable::new("And another item to search 2", Some("Fillers 2")),
+        Searchable::new("Yet more items to search 2", Some("Fillers 2")),
+        Searchable::new("I'm running out of things to say 2", None),
     ];
 
     let props = PickerProps::new(spawn_item, on_select)
-        .with_items(items)
-        .with_title("Hello world!");
+        .items(items)
+        .title("Hello world!");
 
     commands.spawn(props);
 }
@@ -62,7 +78,7 @@ fn spawn_item(
 
 fn on_select(input: In<SelectInput>, items: Query<&PickerItems<Searchable>>) -> Result {
     let item = &items.get(input.entities.picker)?.at(input.index)?;
-    info!("Got item {}", item.0);
+    info!("Got item '{}'", item.haystack);
 
     Ok(())
 }

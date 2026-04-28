@@ -14,7 +14,7 @@ use jackdaw_fuzzy::FuzzyMatcher;
 pub use jackdaw_fuzzy::{Match, Matchable, MatchedStr};
 use lucide_icons::Icon;
 
-use crate::button::{ButtonClickEvent, IconButtonProps, icon_button};
+use crate::button::{ButtonClickEvent, ButtonVariant, IconButtonProps, icon_button};
 use crate::cursor::HoverCursor;
 use crate::icons::{EditorFont, IconFont};
 use crate::scroll::scrollbar;
@@ -29,7 +29,7 @@ impl<T: Matchable + Send + Sync + 'static> Pickable for T {}
 #[derive(Component)]
 #[component(on_replace)]
 pub struct Picker {
-    matcher: FuzzyMatcher<String>,
+    matcher: FuzzyMatcher<Item>,
     spawn_item: SystemId<In<SpawnItemInput>, Result>,
     on_select: SystemId<In<SelectInput>, Result>,
     on_dismiss: SystemId<In<PickerEntities>, Result>,
@@ -81,6 +81,7 @@ pub struct PickerSelect {
 pub struct PickerProps<T: Pickable> {
     items: Option<Vec<T>>,
     title: Option<String>,
+    placeholder: Option<String>,
     dismissible: bool,
     register_spawn_item: Option<
         Box<dyn FnOnce(&mut Commands) -> SystemId<In<SpawnItemInput>, Result> + Send + Sync>,
@@ -121,8 +122,11 @@ impl<T: Pickable> PickerProps<T> {
         let on_dismiss = (register_on_dismiss)(&mut commands);
 
         let items = props.items.take().unwrap_or_default();
-        let str_items = items.iter().map(Matchable::get_text);
-        let matcher = FuzzyMatcher::from_items(str_items);
+        let erased_items = items.iter().map(|item| Item {
+            haystack: item.haystack(),
+            category: item.category(),
+        });
+        let matcher = FuzzyMatcher::from_items(erased_items);
 
         let picker = Picker {
             matcher,
@@ -131,51 +135,46 @@ impl<T: Pickable> PickerProps<T> {
             on_dismiss,
         };
 
-        let input = commands
-            .spawn(text_edit(
-                TextEditProps::default()
-                    .with_placeholder("Search")
-                    .auto_focus(),
-            ))
-            .id();
+        let mut text_edit_props = TextEditProps::default().auto_focus();
+
+        if let Some(placeholder) = props.placeholder.take() {
+            text_edit_props = text_edit_props.with_placeholder(placeholder);
+        }
+
+        let input = commands.spawn(text_edit(text_edit_props)).id();
 
         let list = commands
             .spawn(Node {
                 flex_direction: FlexDirection::Column,
+                padding: px(tokens::SPACING_MD).all(),
+                row_gap: px(tokens::SPACING_SM),
                 width: percent(100),
                 max_height: px(400),
                 overflow: Overflow::scroll_y(),
-                row_gap: px(tokens::SPACING_SM),
                 ..default()
             })
             .id();
 
         let scrollbar = commands.spawn(scrollbar(list)).id();
 
-        let list_container = commands
-            .spawn(Node {
-                width: percent(100),
-                ..default()
-            })
-            .add_children(&[scrollbar, list])
-            .id();
-
         let dismiss = if props.dismissible {
             Some((
                 PickerDismissButton,
-                icon_button(IconButtonProps::new(Icon::X), &icon_font),
+                icon_button(
+                    IconButtonProps::new(Icon::X).variant(ButtonVariant::Ghost),
+                    &icon_font,
+                ),
             ))
         } else {
             None
         };
 
-        let mut children = vec![];
+        let mut header_items = vec![];
 
         if let Some(title) = props.title.take() {
             let titlebar = commands
                 .spawn((
                     Node {
-                        padding: px(tokens::SPACING_XS).all(),
                         align_items: AlignItems::Center,
                         width: percent(100),
                         ..default()
@@ -189,7 +188,12 @@ impl<T: Pickable> PickerProps<T> {
                             },
                             children![(
                                 Text(title),
-                                TextFont::from(font).with_font_size(tokens::TEXT_SIZE_XL),
+                                TextFont {
+                                    font,
+                                    font_size: tokens::TEXT_SIZE_XL,
+                                    weight: FontWeight::SEMIBOLD,
+                                    ..default()
+                                }
                             )],
                         ));
 
@@ -200,7 +204,7 @@ impl<T: Pickable> PickerProps<T> {
                 ))
                 .id();
 
-            children.extend(&[titlebar, input]);
+            header_items.extend(&[titlebar, input]);
         } else if let Some(dismiss) = dismiss {
             // if we put the dismiss button in the title bar with no title, it looks ugly
             // because there's a lot of empty space so we put it after the input instead
@@ -214,31 +218,41 @@ impl<T: Pickable> PickerProps<T> {
                 .add_children(&[input, dismiss])
                 .id();
 
-            children.push(input_container);
+            header_items.push(input_container);
         } else {
-            children.push(input);
+            header_items.push(input);
         }
-
-        let separator = commands.spawn(separator(SeparatorProps::horizontal())).id();
-
-        children.extend(&[separator, list_container]);
 
         let picker_entity = commands
             .spawn((
                 Node {
                     flex_direction: FlexDirection::Column,
-                    padding: px(tokens::SPACING_MD).all(),
-                    border: px(tokens::SPACING_XS).all(),
+                    border: px(1).all(),
                     border_radius: BorderRadius::all(px(tokens::BORDER_RADIUS_MD)),
-                    row_gap: px(tokens::SPACING_MD),
                     width: px(600),
                     ..default()
                 },
-                BorderColor::all(tokens::BORDER_STRONG),
-                BackgroundColor(tokens::PANEL_BG),
+                BorderColor::all(tokens::BORDER_COLOR),
+                BackgroundColor(tokens::BACKGROUND_COLOR.into()),
                 TabGroup::modal(),
             ))
-            .add_children(&children)
+            .with_child((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(tokens::SPACING_MD),
+                    padding: px(tokens::SPACING_MD).all(),
+                    ..default()
+                },
+                BackgroundColor(tokens::PANEL_BG),
+                Children::spawn(WithRelated::new(header_items)),
+            ))
+            .with_child((
+                Node {
+                    width: percent(100),
+                    ..default()
+                },
+                Children::spawn(WithRelated::new([scrollbar, list])),
+            ))
             .id();
 
         commands
@@ -469,6 +483,7 @@ pub fn match_text(segments: Box<[MatchedStr]>) -> impl Bundle {
 fn process_pickers(
     pickers: Query<(Entity, &mut Picker, &WithPickerInput, &WithPickerList)>,
     text_edits: Query<&TextEditValue, Changed<TextEditValue>>,
+    font: Res<EditorFont>,
     mut commands: Commands,
 ) {
     for (picker_entity, mut picker, input_entity, list) in pickers {
@@ -481,21 +496,48 @@ fn process_pickers(
 
         let spawn_item = picker.spawn_item;
 
-        for matched in picker.matcher.matches() {
-            let input = SpawnItemInput {
-                matched,
-                entities: PickerEntities {
-                    picker: picker_entity,
-                    input: input_entity.0,
-                    list: list.0,
-                },
-            };
+        let matches = picker.matcher.matches();
+        for (index, category) in matches.into_iter().enumerate() {
+            let font = font.0.clone();
+            let name = category.name;
 
-            commands.queue(move |world: &mut World| {
-                if let Err(e) = world.run_system_with(spawn_item, input) {
-                    error!("Error when spawning item for picker {picker_entity}: {e}");
-                }
-            });
+            // don't spawn it if the first category is unnamed
+            if name.is_some() || index != 0 {
+                commands.entity(list.0).with_child((
+                    Node {
+                        margin: px(tokens::SPACING_SM).top(),
+                        flex_direction: FlexDirection::Column,
+                        ..default()
+                    },
+                    Children::spawn(SpawnWith(move |spawner: &mut RelatedSpawner<ChildOf>| {
+                        if let Some(name) = name {
+                            spawner.spawn((
+                                Text(name),
+                                TextFont::from(font).with_font_size(tokens::TEXT_SIZE_SM),
+                                TextColor(tokens::TEXT_MUTED_COLOR.into()),
+                            ));
+                        }
+                        spawner.spawn(separator(SeparatorProps::horizontal()));
+                    })),
+                ));
+            }
+
+            for matched in category.items {
+                let input = SpawnItemInput {
+                    matched,
+                    entities: PickerEntities {
+                        picker: picker_entity,
+                        input: input_entity.0,
+                        list: list.0,
+                    },
+                };
+
+                commands.queue(move |world: &mut World| {
+                    if let Err(e) = world.run_system_with(spawn_item, input) {
+                        error!("Error when spawning item for picker {picker_entity}: {e}");
+                    }
+                });
+            }
         }
     }
 }
@@ -549,7 +591,8 @@ fn on_text_edit_submit(
         };
 
         picker.matcher.update_pattern(&submit.text);
-        let Some(first) = picker.matcher.matches().next() else {
+        let matches = picker.matcher.matches();
+        let Some(first) = matches.first().and_then(|c| c.items.first()) else {
             continue;
         };
 
@@ -561,6 +604,7 @@ fn on_text_edit_submit(
 }
 
 impl<T: Pickable> PickerProps<T> {
+    #[must_use]
     pub fn new<S1, M1, S2, M2>(spawn_item: S1, on_select: S2) -> Self
     where
         S1: IntoSystem<In<SpawnItemInput>, Result, M1>,
@@ -571,6 +615,7 @@ impl<T: Pickable> PickerProps<T> {
         Self {
             items: Some(vec![]),
             dismissible: true,
+            placeholder: Some(String::from("Search")),
             title: None,
             register_spawn_item: Some(Box::new(move |commands| {
                 commands.register_system(spawn_item)
@@ -587,26 +632,37 @@ impl<T: Pickable> PickerProps<T> {
         }
     }
 
-    pub fn with_items(mut self, items: impl IntoIterator<Item = T>) -> Self {
+    #[must_use]
+    pub fn placeholder(mut self, placeholder: Option<impl Into<String>>) -> Self {
+        self.placeholder = placeholder.map(Into::into);
+        self
+    }
+
+    #[must_use]
+    pub fn items(mut self, items: impl IntoIterator<Item = T>) -> Self {
         self.items.get_or_insert_default().extend(items);
         self
     }
 
-    pub fn with_item(mut self, item: T) -> Self {
+    #[must_use]
+    pub fn item(mut self, item: T) -> Self {
         self.items.get_or_insert_default().push(item);
         self
     }
 
-    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+    #[must_use]
+    pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self
     }
 
-    pub fn with_dismissible(mut self, value: bool) -> Self {
+    #[must_use]
+    pub fn dismissible(mut self, value: bool) -> Self {
         self.dismissible = value;
         self
     }
 
+    #[must_use]
     pub fn on_dismiss<S, M>(mut self, on_dismiss: S) -> Self
     where
         S: IntoSystem<In<PickerEntities>, Result, M>,
@@ -635,6 +691,21 @@ impl Picker {
         commands.unregister_system(spawn_item);
         commands.unregister_system(on_select);
         commands.unregister_system(on_dismiss);
+    }
+}
+
+struct Item {
+    haystack: String,
+    category: Option<String>,
+}
+
+impl Matchable for Item {
+    fn haystack(&self) -> String {
+        self.haystack.clone()
+    }
+
+    fn category(&self) -> Option<String> {
+        self.category.clone()
     }
 }
 
