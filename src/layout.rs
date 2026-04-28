@@ -565,6 +565,12 @@ fn toolbar(icon_font: Handle<Font>) -> impl Bundle {
                 ActivateDrawBrushModalOp::LABEL
             ),
             toolbar_edit_button(
+                Icon::RulerDimensionLine,
+                EditToolButton::Operator("tools.measure_distance"),
+                f.clone(),
+                "Measure Distance"
+            ),
+            toolbar_edit_button(
                 Icon::CircleDot,
                 EditToolButton::Vertex,
                 f.clone(),
@@ -758,6 +764,23 @@ fn toolbar_edit_button(
                 });
                 return;
             }
+            // For modal operators (Draw Brush, Measure Distance, etc.), cancel
+            // any active modal first so the user can switch tools without
+            // having to press Escape.
+            if let EditToolButton::Operator(op) = tool {
+                commands.queue(move |world: &mut World| {
+                    let _ = world.operator("modal.cancel").call();
+                    let _ = world
+                        .operator(op)
+                        .settings(CallOperatorSettings {
+                            execution_context: ExecutionContext::Invoke,
+                            creates_history_entry: true,
+                        })
+                        .call();
+                });
+                return;
+            }
+
             let op_id: Cow<'static, str> = match tool {
                 EditToolButton::Object => EditModeObjectOp::ID.into(),
                 EditToolButton::Vertex => EditModeVertexOp::ID.into(),
