@@ -321,8 +321,6 @@ impl Plugin for EditorCorePlugin {
                     sync_selected_keyframes_from_selection,
                     handle_timeline_shortcuts,
                     auto_save_layout_on_change,
-                    add_entity_picker::filter_add_entity_picker,
-                    add_entity_picker::close_add_entity_picker_on_escape,
                 )
                     .run_if(in_state(AppState::Editor)),
             )
@@ -1873,11 +1871,12 @@ fn populate_menu(
     let mut add_menu: Vec<(String, String)> = Vec::with_capacity(add_items.len() + 8);
     let mut last_category: Option<String> = None;
     for item in add_items {
-        if last_category.as_deref() != Some(item.category.as_str()) {
+        let name = item.category.name.unwrap_or_else(|| String::from("None"));
+        if last_category.as_deref() != Some(name.as_str()) {
             if last_category.is_some() {
                 add_menu.push(("---".into(), String::new()));
             }
-            last_category = Some(item.category.clone());
+            last_category = Some(name.clone());
         }
         add_menu.push((item.action, item.label));
     }

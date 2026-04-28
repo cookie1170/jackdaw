@@ -28,7 +28,7 @@ impl Matchable for Searchable {
 
     fn category(&self) -> Category {
         Category {
-            order: None,
+            order: 0,
             name: self.category.clone(),
         }
     }
