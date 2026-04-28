@@ -30,9 +30,9 @@ impl<T: Matchable + Send + Sync + 'static> Pickable for T {}
 #[component(on_replace)]
 pub struct Picker {
     matcher: FuzzyMatcher<String>,
-    spawn_item: SystemId<In<SpawnItemInput>>,
-    on_select: SystemId<In<SelectInput>>,
-    on_dismiss: SystemId<In<PickerEntities>>,
+    spawn_item: SystemId<In<SpawnItemInput>, Result>,
+    on_select: SystemId<In<SelectInput>, Result>,
+    on_dismiss: SystemId<In<PickerEntities>, Result>,
 }
 
 #[derive(Component, Deref, Debug, PartialEq, Clone)]
@@ -80,12 +80,14 @@ pub struct PickerProps<T: Pickable> {
     items: Vec<T>,
     title: Option<String>,
     dismissible: bool,
-    register_spawn_item:
-        Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SpawnItemInput>> + Send + Sync>>,
+    register_spawn_item: Option<
+        Box<dyn FnOnce(&mut Commands) -> SystemId<In<SpawnItemInput>, Result> + Send + Sync>,
+    >,
     register_on_select:
-        Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SelectInput>> + Send + Sync>>,
-    register_on_dismiss:
-        Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<PickerEntities>> + Send + Sync>>,
+        Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SelectInput>, Result> + Send + Sync>>,
+    register_on_dismiss: Option<
+        Box<dyn FnOnce(&mut Commands) -> SystemId<In<PickerEntities>, Result> + Send + Sync>,
+    >,
 }
 
 #[derive(Component)]
@@ -93,12 +95,14 @@ struct PickerConfig {
     matcher: Option<FuzzyMatcher<String>>,
     title: Option<String>,
     dismissible: bool,
-    register_spawn_item:
-        Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SpawnItemInput>> + Send + Sync>>,
+    register_spawn_item: Option<
+        Box<dyn FnOnce(&mut Commands) -> SystemId<In<SpawnItemInput>, Result> + Send + Sync>,
+    >,
     register_on_select:
-        Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SelectInput>> + Send + Sync>>,
-    register_on_dismiss:
-        Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<PickerEntities>> + Send + Sync>>,
+        Option<Box<dyn FnOnce(&mut Commands) -> SystemId<In<SelectInput>, Result> + Send + Sync>>,
+    register_on_dismiss: Option<
+        Box<dyn FnOnce(&mut Commands) -> SystemId<In<PickerEntities>, Result> + Send + Sync>,
+    >,
 
     initialized: bool,
 }
@@ -140,7 +144,7 @@ fn setup_picker(
                 max_height: px(400),
                 overflow: Overflow::scroll_y(),
                 row_gap: px(tokens::SPACING_SM),
-                ..Default::default()
+                ..default()
             })
             .id();
 
@@ -149,7 +153,7 @@ fn setup_picker(
         let list_container = commands
             .spawn(Node {
                 width: percent(100),
-                ..Default::default()
+                ..default()
             })
             .add_children(&[scrollbar, list])
             .id();
@@ -174,14 +178,14 @@ fn setup_picker(
                         padding: px(tokens::SPACING_XS).all(),
                         align_items: AlignItems::Center,
                         width: percent(100),
-                        ..Default::default()
+                        ..default()
                     },
                     Children::spawn(SpawnWith(|spawner: &mut RelatedSpawner<ChildOf>| {
                         spawner.spawn((
                             Node {
                                 flex_grow: 1.0,
                                 justify_content: JustifyContent::Center,
-                                ..Default::default()
+                                ..default()
                             },
                             children![(
                                 Text(title),
@@ -205,7 +209,7 @@ fn setup_picker(
                 .spawn(Node {
                     width: percent(100),
                     column_gap: px(tokens::SPACING_SM),
-                    ..Default::default()
+                    ..default()
                 })
                 .add_children(&[input, dismiss])
                 .id();
@@ -228,7 +232,7 @@ fn setup_picker(
                     border_radius: BorderRadius::all(px(tokens::BORDER_RADIUS_MD)),
                     row_gap: px(tokens::SPACING_MD),
                     width: px(600),
-                    ..Default::default()
+                    ..default()
                 },
                 BorderColor::all(tokens::BORDER_STRONG),
                 BackgroundColor(tokens::PANEL_BG),
@@ -245,7 +249,7 @@ fn setup_picker(
                     width: percent(100),
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
-                    ..Default::default()
+                    ..default()
                 },
                 picker,
             ))
@@ -263,8 +267,11 @@ impl<T: Pickable> PickerItems<T> {
         &self.0
     }
 
-    pub fn at(&self, index: usize) -> &T {
-        &self.0[index]
+    pub fn at(&self, index: usize) -> Result<&T> {
+        // return a `BevyError` so you can just `?` it
+        self.0
+            .get(index)
+            .ok_or_else(|| BevyError::from(format!("No item at index {index}")))
     }
 }
 
@@ -292,20 +299,21 @@ pub fn picker<T: Pickable>(props: PickerProps<T>) -> impl Bundle {
             register_on_dismiss,
             initialized: false,
         },
-        ZIndex(1000),
+        GlobalZIndex(1000),
     )
 }
 
 #[derive(Component, Debug, Default, PartialEq, Clone, Copy)]
 pub struct PickerItem(pub usize);
 
+#[must_use]
 pub fn picker_item(index: usize) -> impl Bundle {
     (
         Node {
             width: percent(100),
             padding: px(tokens::SPACING_SM).all(),
             border_radius: BorderRadius::all(px(tokens::BORDER_RADIUS_SM)),
-            ..Default::default()
+            ..default()
         },
         BackgroundColor(tokens::ELEVATED_BG),
         Interaction::default(),
@@ -443,7 +451,13 @@ fn on_dismiss_activated(
         list: list.0,
     };
 
-    commands.run_system_with(picker.on_dismiss, entities);
+    let on_dismiss = picker.on_dismiss;
+
+    commands.queue(move |world: &mut World| {
+        if let Err(e) = world.run_system_with(on_dismiss, entities) {
+            error!("Error when dismissing picker {picker_entity}: {e}");
+        }
+    });
 }
 
 #[derive(Component)]
@@ -480,7 +494,7 @@ fn process_pickers(
     text_edits: Query<&TextEditValue, Changed<TextEditValue>>,
     mut commands: Commands,
 ) {
-    for (entity, mut picker, input_entity, list) in pickers {
+    for (picker_entity, mut picker, input_entity, list) in pickers {
         let Ok(input) = text_edits.get(input_entity.0) else {
             continue;
         };
@@ -494,13 +508,17 @@ fn process_pickers(
             let input = SpawnItemInput {
                 matched,
                 entities: PickerEntities {
-                    picker: entity,
+                    picker: picker_entity,
                     input: input_entity.0,
                     list: list.0,
                 },
             };
 
-            commands.run_system_with(spawn_item, input);
+            commands.queue(move |world: &mut World| {
+                if let Err(e) = world.run_system_with(spawn_item, input) {
+                    error!("Error when spawning item for picker {picker_entity}: {e}");
+                }
+            });
         }
     }
 }
@@ -514,16 +532,23 @@ fn on_picker_select(
         return;
     };
 
+    let picker_entity = trigger.entity;
+
     let input = SelectInput {
         index: trigger.index,
         entities: PickerEntities {
-            picker: trigger.entity,
+            picker: picker_entity,
             input: input.0,
             list: list.0,
         },
     };
 
-    commands.run_system_with(picker.on_select, input);
+    let on_select = picker.on_select;
+    commands.queue(move |world: &mut World| {
+        if let Err(e) = world.run_system_with(on_select, input) {
+            error!("Error when selecting item on picker {picker_entity}: {e}");
+        }
+    });
 }
 
 fn on_text_edit_submit(
@@ -561,8 +586,8 @@ fn on_text_edit_submit(
 impl<T: Pickable> PickerProps<T> {
     pub fn new<S1, M1, S2, M2>(spawn_item: S1, on_select: S2) -> Self
     where
-        S1: IntoSystem<In<SpawnItemInput>, (), M1>,
-        S2: IntoSystem<In<SelectInput>, (), M2>,
+        S1: IntoSystem<In<SpawnItemInput>, Result, M1>,
+        S2: IntoSystem<In<SelectInput>, Result, M2>,
     {
         let spawn_item = IntoSystem::into_system(spawn_item);
         let on_select = IntoSystem::into_system(on_select);
@@ -579,6 +604,7 @@ impl<T: Pickable> PickerProps<T> {
             register_on_dismiss: Some(Box::new(move |commands| {
                 commands.register_system(|entities: In<PickerEntities>, mut commands: Commands| {
                     commands.entity(entities.picker).try_despawn();
+                    Ok(())
                 })
             })),
         }
@@ -606,7 +632,7 @@ impl<T: Pickable> PickerProps<T> {
 
     pub fn on_dismiss<S, M>(mut self, on_dismiss: S) -> Self
     where
-        S: IntoSystem<In<PickerEntities>, (), M>,
+        S: IntoSystem<In<PickerEntities>, Result, M>,
     {
         let on_dismiss = IntoSystem::into_system(on_dismiss);
         self.register_on_dismiss = Some(Box::new(move |commands| {

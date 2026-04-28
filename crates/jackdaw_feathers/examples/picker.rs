@@ -50,20 +50,20 @@ fn spawn_picker(mut commands: Commands) {
 fn spawn_item(
     In(SpawnItemInput { matched, entities }): In<SpawnItemInput>,
     mut commands: Commands,
-) {
-    let item = commands
-        .spawn((
-            picker_item(matched.index),
-            children![match_text(matched.segments)],
-        ))
-        .id();
+) -> Result {
+    commands.entity(entities.list).with_child((
+        picker_item(matched.index),
+        children![match_text(matched.segments)],
+    ));
 
-    commands.entity(entities.list).add_child(item);
+    Ok(())
 }
 
-fn on_select(input: In<SelectInput>, items: Query<&PickerItems<Searchable>>) {
-    let item = &items.get(input.entities.picker).unwrap().at(input.index);
+fn on_select(input: In<SelectInput>, items: Query<&PickerItems<Searchable>>) -> Result {
+    let item = &items.get(input.entities.picker)?.at(input.index)?;
     info!("Got item {}", item.0);
+
+    Ok(())
 }
 
 fn main() -> AppExit {

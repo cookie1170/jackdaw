@@ -71,6 +71,7 @@ use nucleo_matcher::{Config, Matcher, Utf32String};
 /// This trait must be implemented by any item used with a [`FuzzyMatcher`]
 pub trait Matchable {
     /// Gets the string that this item should be matched with
+    #[must_use]
     fn get_text(&self) -> String;
 }
 
@@ -99,11 +100,13 @@ impl<T: Matchable> Default for FuzzyMatcher<T> {
 
 impl<T: Matchable> FuzzyMatcher<T> {
     /// Creates a new fuzzy matcher with no items and pattern
+    #[must_use]
     pub fn new() -> Self {
         Self::from_items(std::iter::empty())
     }
 
     /// Creates a new fuzzy matcher with items from the given iterator
+    #[must_use]
     pub fn from_items(items: impl IntoIterator<Item = T>) -> Self {
         Self {
             items: items.into_iter().collect::<Vec<_>>(),
@@ -113,6 +116,7 @@ impl<T: Matchable> FuzzyMatcher<T> {
     }
 
     /// Sets the pattern that items are matched against, returning itself
+    #[must_use]
     pub fn with_pattern(mut self, pattern: &str) -> Self {
         self.update_pattern(pattern);
 
@@ -136,24 +140,28 @@ impl<T: Matchable> FuzzyMatcher<T> {
     }
 
     /// Adds an item to the item list, returning itself
+    #[must_use]
     pub fn with_item(mut self, item: T) -> Self {
         self.push_item(item);
         self
     }
 
     /// Adds an iterator of items to the item list, returning itself
+    #[must_use]
     pub fn with_items(mut self, items: impl IntoIterator<Item = T>) -> Self {
         self.push_items(items);
         self
     }
 
     /// Gets a reference to the list of items
+    #[must_use]
     pub fn items(&self) -> &[T] {
         &self.items
     }
 
     /// Compute and iterate over all the items that the pattern matches, sorted with the highest
     /// scoring items positioned first
+    #[must_use]
     pub fn matches(&mut self) -> FuzzyMatches<'_> {
         let mut matches = Vec::with_capacity(self.items.len());
 

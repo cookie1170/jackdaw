@@ -16,18 +16,17 @@ struct CommandPalette;
 pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
     ctx.register_operator::<ToggleCommandPaletteOp>();
 
-    let ext = ctx.id();
-    ctx.spawn((
-        ActionOf::<CoreExtensionInputContext>::new(ext),
-        Action::<ToggleCommandPaletteOp>::new(),
-        bindings![
-            (
-                KeyCode::Space.with_mod_keys(ModKeys::CONTROL),
-                bevy_enhanced_input::prelude::Press::default()
-            ),
-            (KeyCode::F3, bevy_enhanced_input::prelude::Press::default())
-        ],
-    ));
+    ctx.entity_mut()
+        .with_related::<ActionOf<CoreExtensionInputContext>>((
+            Action::<ToggleCommandPaletteOp>::new(),
+            bindings![
+                (
+                    KeyCode::Space.with_mod_keys(ModKeys::CONTROL),
+                    bevy_enhanced_input::prelude::Press::default()
+                ),
+                (KeyCode::F3, bevy_enhanced_input::prelude::Press::default())
+            ],
+        ));
 }
 
 #[operator(
@@ -39,15 +38,11 @@ pub(crate) fn toggle_command_palette(
     _: In<OperatorParameters>,
     // need world access to run the availability checks :(
     world: &mut World,
+    existing_query: &mut QueryState<Entity, With<CommandPalette>>,
 ) -> OperatorResult {
     let mut any_existing = false;
 
-    for existing in world
-        .query_filtered::<Entity, With<CommandPalette>>()
-        .query(world)
-        .iter()
-        .collect::<Vec<_>>()
-    {
+    for existing in existing_query.query(world).iter().collect::<Vec<_>>() {
         world.entity_mut(existing).despawn();
         any_existing = true;
     }
@@ -56,7 +51,14 @@ pub(crate) fn toggle_command_palette(
         return OperatorResult::Finished;
     }
 
-    let operators = get_operators(world);
+    let operators = match world.run_system_cached(get_operators) {
+        Ok(ops) => ops,
+        Err(e) => {
+            error!("Couldn't get the avilable operators: {e}");
+            return OperatorResult::Finished;
+        }
+    };
+
     let props = PickerProps::new(spawn_item, on_select)
         .with_items(operators)
         .with_title("Command Palette");
@@ -66,21 +68,20 @@ pub(crate) fn toggle_command_palette(
     OperatorResult::Finished
 }
 
-fn get_operators(world: &mut World) -> impl Iterator<Item = RegisteredOperator> {
-    let mut operator_entities = world.query::<&OperatorEntity>();
-    let operator_entities = operator_entities.query(world);
-    let mut operators = Vec::with_capacity(operator_entities.iter().len());
-
-    for operator in operator_entities {
-        operators.push(RegisteredOperator {
-            label: operator.label(),
-            id: operator.id(),
-        });
-    }
-
-    operators
+fn get_operators(
+    world: &mut World,
+    operator_entities: &mut QueryState<&OperatorEntity>,
+) -> Vec<RegisteredOperator> {
+    operator_entities
+        .iter(world)
+        .map(|op| RegisteredOperator {
+            label: op.label(),
+            id: op.id(),
+        })
+        .collect::<Vec<_>>() // if i don't collect, it's a double borrow of `world`
         .into_iter()
         .filter(|op| world.operator(op.id).is_available().unwrap_or(false))
+        .collect()
 }
 
 fn spawn_item(
@@ -88,45 +89,44 @@ fn spawn_item(
     items: Query<&PickerItems<RegisteredOperator>>,
     font: Res<EditorFont>,
     mut commands: Commands,
-) {
-    let item = items.get(entities.picker).unwrap().at(matched.index);
+) -> Result {
+    let item = items.get(entities.picker)?.at(matched.index)?;
 
-    let item = commands
-        .spawn((
-            picker_item(matched.index),
-            children![(
-                Node {
-                    width: percent(100),
-                    align_items: AlignItems::Center,
-                    flex_direction: FlexDirection::Row,
-                    justify_content: JustifyContent::SpaceBetween,
-                    ..Default::default()
-                },
-                children![
-                    match_text(matched.segments),
-                    (
-                        Text::new(item.id),
-                        TextFont::from(font.0.clone()).with_font_size(tokens::TEXT_SIZE_SM),
-                        TextColor(tokens::TEXT_MUTED_COLOR.into())
-                    )
-                ]
-            )],
-        ))
-        .id();
-
-    commands.entity(entities.list).add_child(item);
+    commands.entity(entities.list).with_child((
+        picker_item(matched.index),
+        children![(
+            Node {
+                width: percent(100),
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            },
+            children![
+                match_text(matched.segments),
+                (
+                    Text::new(item.id),
+                    TextFont::from(font.0.clone()).with_font_size(tokens::TEXT_SIZE_SM),
+                    TextColor(tokens::TEXT_MUTED_COLOR.into())
+                )
+            ]
+        )],
+    ));
+    Ok(())
 }
 
 fn on_select(
     input: In<SelectInput>,
     items: Query<&PickerItems<RegisteredOperator>>,
     mut commands: Commands,
-) {
-    let item = items.get(input.entities.picker).unwrap().at(input.index);
+) -> Result {
+    let item = items.get(input.entities.picker)?.at(input.index)?;
 
     commands.operator(item.id).call();
 
     commands.entity(input.entities.picker).try_despawn();
+
+    Ok(())
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
