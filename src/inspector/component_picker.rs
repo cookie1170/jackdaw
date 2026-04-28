@@ -42,10 +42,10 @@ impl GroupOrder {
     }
 
     fn order(&self) -> i32 {
-        match self {
-            &GroupOrder::Custom(_) => 2,
-            &GroupOrder::Game => 1,
-            &GroupOrder::Bevy => 0,
+        match *self {
+            GroupOrder::Custom(_) => 2,
+            GroupOrder::Game => 1,
+            GroupOrder::Bevy => 0,
         }
     }
 }

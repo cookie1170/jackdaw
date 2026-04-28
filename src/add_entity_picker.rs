@@ -4,6 +4,7 @@
 //! `menu == "Add"`.
 
 use bevy::prelude::*;
+use jackdaw_api::TopLevelMenu;
 use jackdaw_api::prelude::Operator;
 use jackdaw_feathers::picker::{
     Category, Matchable, PickerItems, PickerProps, SelectInput, SpawnItemInput, match_text,
